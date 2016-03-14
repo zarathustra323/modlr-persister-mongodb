@@ -14,6 +14,11 @@
             "As3\\Modlr\\Persister\\MongoDb\\": "src/"
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "As3\\Modlr\\Persister\\MongoDb\\Tests\\": "tests/"
+        }
+    },
     "require": {
         "php": ">=5.4",
         "as3/modlr": "^1.0",
