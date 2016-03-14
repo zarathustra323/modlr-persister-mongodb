@@ -16,6 +16,7 @@
     },
     "require": {
         "php": ">=5.6",
-        "as3/modlr-rest-odm": "dev-master"
+        "as3/modlr-rest-odm": "dev-master",
+        "doctrine/mongodb": "^1.2"
     }
 }
