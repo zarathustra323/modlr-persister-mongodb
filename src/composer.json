@@ -1,0 +1,21 @@
+{
+    "name": "as3/modlr-persister-mongodb",
+    "license": "Apache-2.0",
+    "type": "library",
+    "description": "MongoDB Persister for the Modlr REST library.",
+    "authors": [
+        {
+            "name": "Jacob Bare",
+            "email": "jacob.bare@gmail.com"
+        }
+    ],
+    "autoload": {
+        "psr-0": {
+            "As3\\Modlr\\RestOdm\\Persister\\MongoDb": "src/"
+        }
+    },
+    "require": {
+        "php": ">=5.6",
+        "as3/modlr-rest-odm": "dev-master"
+    }
+}
