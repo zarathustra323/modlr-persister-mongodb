@@ -15,7 +15,7 @@
         }
     },
     "require": {
-        "php": ">=5.6",
+        "php": ">=5.4",
         "as3/modlr": "dev-master",
         "doctrine/mongodb": "^1.2"
     }
