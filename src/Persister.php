@@ -1,16 +1,16 @@
 <?php
 
-namespace As3\Modlr\RestOdm\Persister\MongoDb;
+namespace As3\Modlr\Persister\MongoDb;
 
-use As3\Modlr\RestOdm\Store\Store;
-use As3\Modlr\RestOdm\Models\Model;
-use As3\Modlr\RestOdm\Models\Collection;
-use As3\Modlr\RestOdm\Metadata\EntityMetadata;
-use As3\Modlr\RestOdm\Metadata\AttributeMetadata;
-use As3\Modlr\RestOdm\Metadata\RelationshipMetadata;
-use As3\Modlr\RestOdm\Persister\PersisterInterface;
-use As3\Modlr\RestOdm\Persister\PersisterException;
-use As3\Modlr\RestOdm\Persister\Record;
+use As3\Modlr\Store\Store;
+use As3\Modlr\Models\Model;
+use As3\Modlr\Models\Collection;
+use As3\Modlr\Metadata\EntityMetadata;
+use As3\Modlr\Metadata\AttributeMetadata;
+use As3\Modlr\Metadata\RelationshipMetadata;
+use As3\Modlr\Persister\PersisterInterface;
+use As3\Modlr\Persister\PersisterException;
+use As3\Modlr\Persister\Record;
 use Doctrine\MongoDB\Connection;
 use \MongoId;
 

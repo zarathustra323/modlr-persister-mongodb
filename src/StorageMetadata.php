@@ -1,9 +1,9 @@
 <?php
 
-namespace As3\Modlr\RestOdm\Persister\MongoDb;
+namespace As3\Modlr\Persister\MongoDb;
 
-use As3\Modlr\RestOdm\Metadata\Interfaces\MergeableInterface;
-use As3\Modlr\RestOdm\Metadata\Interfaces\StorageLayerInterface;
+use As3\Modlr\Metadata\Interfaces\MergeableInterface;
+use As3\Modlr\Metadata\Interfaces\StorageLayerInterface;
 
 /**
  * Defines the MongoDB storage metadata for an entity (e.g. a database object).
