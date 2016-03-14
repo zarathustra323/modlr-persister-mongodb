@@ -3,16 +3,7 @@ php:
   - '5.4'
   - '5.5'
   - '5.6'
-  - '7.0'
-env:
-  - MONGO_VERSION=1.5.8 PREFER_LOWEST=""
-  - MONGO_VERSION=stable PREFER_LOWEST=""
-  - MONGO_VERSION=stable PREFER_LOWEST="--prefer-lowest"
-
 services: mongodb
-
-before_script:
-  - yes '' | pecl -q install -f mongo-${MONGO_VERSION}
-  - php --ri mongo
+before_script: phpenv config-add .travis.ini
 install:
   - composer install --no-interaction
