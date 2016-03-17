@@ -2,10 +2,11 @@
 
 namespace As3\Modlr\Persister\MongoDb;
 
-use As3\Modlr\Util\EntityUtility;
 use As3\Modlr\Exception\MetadataException;
 use As3\Modlr\Metadata\EntityMetadata;
+use As3\Modlr\Metadata\Interfaces\StorageLayerInterface;
 use As3\Modlr\Metadata\Interfaces\StorageMetadataFactoryInterface;
+use As3\Modlr\Util\EntityUtility;
 
 /**
  * Creates MongoDb storage Metadata instances for use with metadata drivers.
@@ -33,9 +34,18 @@ final class StorageMetadataFactory implements StorageMetadataFactoryInterface
     /**
      * {@inheritDoc}
      */
-    public function getNewInstance()
+    public function createInstance(array $mapping)
     {
-        return new StorageMetadata();
+        $persistence = new StorageMetadata();
+
+        if (isset($mapping['db'])) {
+            $persistence->db = $mapping['db'];
+        }
+
+        if (isset($mapping['collection'])) {
+            $persistence->collection = $mapping['collection'];
+        }
+        return $persistence;
     }
 
     /**
@@ -53,17 +63,22 @@ final class StorageMetadataFactory implements StorageMetadataFactoryInterface
      */
     public function handleValidate(EntityMetadata $metadata)
     {
+        $this->validateIdStrategy($metadata);
+        $this->validateDatabase($metadata);
+        $this->validateCollectionNaming($metadata);
+    }
+
+
+
+    /**
+     * Validates that the collection naming is correct, based on entity format config.
+     *
+     * @param   EntityMetadata  $metadata
+     * @throws  MetadataException
+     */
+    private function validateCollectionNaming(EntityMetadata $metadata)
+    {
         $persistence = $metadata->persistence;
-
-        $validIdStrategies = ['object'];
-        if (!in_array($persistence->idStrategy, $validIdStrategies)) {
-            throw MetadataException::invalidMetadata($metadata->type, sprintf('The persistence id strategy "%s" is invalid. Valid types are "%s"', $persistence->idStrategy, implode('", "', $validIdStrategies)));
-        }
-
-        if (false === $metadata->isChildEntity() && (empty($persistence->db) || empty($persistence->collection))) {
-            throw MetadataException::invalidMetadata($metadata->type, 'The persistence database and collection names cannot be empty.');
-        }
-
         if (false === $this->entityUtil->isEntityTypeValid($persistence->collection)) {
             throw MetadataException::invalidMetadata(
                 $metadata->type,
@@ -72,6 +87,35 @@ final class StorageMetadataFactory implements StorageMetadataFactoryInterface
                         $this->entityUtil->getRestConfig()->getEntityFormat()
                 )
             );
+        }
+    }
+
+    /**
+     * Validates that the proper database properties are set.
+     *
+     * @param   EntityMetadata  $metadata
+     * @throws  MetadataException
+     */
+    private function validateDatabase(EntityMetadata $metadata)
+    {
+        $persistence = $metadata->persistence;
+        if (false === $metadata->isChildEntity() && (empty($persistence->db) || empty($persistence->collection))) {
+            throw MetadataException::invalidMetadata($metadata->type, 'The persistence database and collection names cannot be empty.');
+        }
+    }
+
+    /**
+     * Validates the proper id strategy.
+     *
+     * @param   EntityMetadata  $metadata
+     * @throws  MetadataException
+     */
+    private function validateIdStrategy(EntityMetadata $metadata)
+    {
+        $persistence = $metadata->persistence;
+        $validIdStrategies = ['object'];
+        if (!in_array($persistence->idStrategy, $validIdStrategies)) {
+            throw MetadataException::invalidMetadata($metadata->type, sprintf('The persistence id strategy "%s" is invalid. Valid types are "%s"', $persistence->idStrategy, implode('", "', $validIdStrategies)));
         }
     }
 }

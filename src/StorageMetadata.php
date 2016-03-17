@@ -14,13 +14,6 @@ use As3\Modlr\Metadata\Interfaces\StorageLayerInterface;
 class StorageMetadata implements StorageLayerInterface
 {
     /**
-     * The storage layer key.
-     *
-     * @var string
-     */
-    public $persisterKey;
-
-    /**
      * The database name.
      *
      * @var string
@@ -48,7 +41,7 @@ class StorageMetadata implements StorageLayerInterface
      */
     public function getKey()
     {
-        return $this->persisterKey;
+        return Persister::PERSISTER_KEY;
     }
 
     /**
