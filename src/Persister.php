@@ -33,6 +33,13 @@ final class Persister implements PersisterInterface
     private $connection;
 
     /**
+     * The query/database operations formatter.
+     *
+     * @var Formatter
+     */
+    private $formatter;
+
+    /**
      * @var StorageMetadataFactory
      */
     private $smf;
@@ -46,7 +53,9 @@ final class Persister implements PersisterInterface
     public function __construct(Connection $connection, StorageMetadataFactory $smf)
     {
         $this->connection = $connection;
+        $this->formatter = new Formatter();
         $this->smf = $smf;
+
     }
 
     /**
@@ -72,7 +81,16 @@ final class Persister implements PersisterInterface
     public function all(EntityMetadata $metadata, Store $store, array $identifiers = [])
     {
         $criteria = $this->getRetrieveCritiera($metadata, $identifiers);
-        $cursor = $this->findFromDatabase($metadata, $criteria);
+        $cursor = $this->doQuery($metadata, $store, $criteria);
+        return $this->hydrateRecords($metadata, $cursor->toArray(), $store);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function query(EntityMetadata $metadata, Store $store, array $criteria, array $fields = [], array $sort = [], $offset = 0, $limit = 0)
+    {
+        $cursor = $this->doQuery($metadata, $store, $criteria);
         return $this->hydrateRecords($metadata, $cursor->toArray(), $store);
     }
 
@@ -82,7 +100,7 @@ final class Persister implements PersisterInterface
     public function inverse(EntityMetadata $owner, EntityMetadata $rel, Store $store, array $identifiers, $inverseField)
     {
         $criteria = $this->getInverseCriteria($owner, $rel, $identifiers, $inverseField);
-        $cursor = $this->findFromDatabase($rel, $criteria);
+        $cursor = $this->doQuery($rel, $store, $criteria);
         return $this->hydrateRecords($rel, $cursor->toArray(), $store);
     }
 
@@ -92,7 +110,7 @@ final class Persister implements PersisterInterface
     public function retrieve(EntityMetadata $metadata, $identifier, Store $store)
     {
         $criteria = $this->getRetrieveCritiera($metadata, $identifier);
-        $result = $this->findFromDatabase($metadata, $criteria)->getSingleResult();
+        $result = $this->doQuery($metadata, $store, $criteria)->getSingleResult();
         if (null === $result) {
             return;
         }
@@ -145,6 +163,7 @@ final class Persister implements PersisterInterface
     /**
      * Prepares and formats an attribute value for proper insertion into the database.
      *
+     * @deprecated
      * @param   AttributeMetadata   $attrMeta
      * @param   mixed               $value
      * @return  mixed
@@ -152,7 +171,7 @@ final class Persister implements PersisterInterface
     protected function prepareAttribute(AttributeMetadata $attrMeta, $value)
     {
         // Handle data type conversion, if needed.
-        if ('date' === $attrMeta->dataType) {
+        if ('date' === $attrMeta->dataType && $value instanceof \DateTime) {
             return new \MongoDate($value->getTimestamp(), $value->format('u'));
         }
         return $value;
@@ -161,6 +180,7 @@ final class Persister implements PersisterInterface
     /**
      * Prepares and formats a has-one relationship model for proper insertion into the database.
      *
+     * @deprecated
      * @param   RelationshipMetadata    $relMeta
      * @param   Model|null              $model
      * @return  mixed
@@ -176,6 +196,7 @@ final class Persister implements PersisterInterface
     /**
      * Prepares and formats a has-many relationship model set for proper insertion into the database.
      *
+     * @deprecated
      * @param   RelationshipMetadata    $relMeta
      * @param   Model[]|null            $models
      * @return  mixed
@@ -195,6 +216,7 @@ final class Persister implements PersisterInterface
     /**
      * Creates a reference for storage of a related model in the database
      *
+     * @deprecated
      * @param   RelationshipMetadata    $relMeta
      * @param   Model                   $model
      * @return  mixed
@@ -290,10 +312,18 @@ final class Persister implements PersisterInterface
      */
     public function generateId($strategy = null)
     {
-        if (false === $this->isIdStrategySupported($strategy)) {
+        if (false === $this->getFormatter()->isIdStrategySupported($strategy)) {
             throw PersisterException::nyi('ID generation currently only supports an object strategy, or none at all.');
         }
         return new MongoId();
+    }
+
+    /**
+     * @return  Formatter
+     */
+    public function getFormatter()
+    {
+        return $this->formatter;
     }
 
     /**
@@ -301,13 +331,7 @@ final class Persister implements PersisterInterface
      */
     public function convertId($identifier, $strategy = null)
     {
-        if (false === $this->isIdStrategySupported($strategy)) {
-            throw PersisterException::nyi('ID conversion currently only supports an object strategy, or none at all.');
-        }
-        if ($identifier instanceof MongoId) {
-            return $identifier;
-        }
-        return new MongoId($identifier);
+        return $this->getFormatter()->getIdentifierDbValue($identifier, $strategy);
     }
 
     /**
@@ -344,11 +368,17 @@ final class Persister implements PersisterInterface
      * Finds records from the database based on the provided metadata and criteria.
      *
      * @param   EntityMetadata  $metadata   The model metadata that the database should query against.
+     * @param   Store           $store      The store.
      * @param   array           $criteria   The query criteria.
+     * @param   array           $fields     Fields to include/exclude.
+     * @param   array           $sort       The sort criteria.
+     * @param   int             $offset     The starting offset, aka the number of Models to skip.
+     * @param   int             $limit      The number of Models to limit.
      * @return  \Doctrine\MongoDB\Cursor
      */
-    protected function findFromDatabase(EntityMetadata $metadata, array $criteria)
+    protected function doQuery(EntityMetadata $metadata, Store $store, array $criteria, array $fields = [], array $sort = [], $offset = 0, $limit = 0)
     {
+        $criteria = $this->getFormatter()->formatQuery($metadata, $store, $criteria);
         return $this->createQueryBuilder($metadata)
             ->find()
             ->setQueryArray($criteria)
@@ -469,45 +499,25 @@ final class Persister implements PersisterInterface
     /**
      * Gets standard database retrieval criteria for an entity and the provided identifiers.
      *
-     * @param   EntityMetadata  $metadata       The entity to retrieve database records for.
-     * @param   string|array    $identifiers    The IDs to query.
+     * @param   EntityMetadata      $metadata       The entity to retrieve database records for.
+     * @param   string|array|null   $identifiers    The IDs to query.
      * @return  array
      */
-    protected function getRetrieveCritiera(EntityMetadata $metadata, $identifiers)
+    protected function getRetrieveCritiera(EntityMetadata $metadata, $identifiers = null)
     {
-        $idKey = $this->getIdentifierKey();
-        $criteria[$idKey] = $this->getIdentifierCriteria($identifiers);
-        if (empty($criteria[$idKey])) {
-            unset($criteria[$idKey]);
-        }
+        $criteria = [];
         if (true === $metadata->isChildEntity()) {
             $criteria[$this->getPolymorphicKey()] = $metadata->type;
         }
-        return $criteria;
-    }
 
-    /**
-     * Creates/formats the MongoDB identifier critiera based on a provided set of ids.
-     *
-     * @param   string|array    $identifiers
-     * @return  array
-     */
-    protected function getIdentifierCriteria($identifiers)
-    {
-        $criteria = [];
-        if (is_array($identifiers)) {
-            $ids = [];
-            foreach ($identifiers as $id) {
-                $ids[] = $this->convertId($id);
-            }
-            if (1 === count($ids)) {
-                $criteria = $ids[0];
-            } elseif (!empty($ids)) {
-                $criteria = ['$in' => $ids];
-            }
-        } else {
-            $criteria = $this->convertId($identifiers);
+        if (null === $identifiers) {
+            return $criteria;
         }
+        $identifiers = (array) $identifiers;
+        if (empty($identifiers)) {
+            return $criteria;
+        }
+        $criteria[$this->getIdentifierKey()] = (1 === count($identifiers)) ? $identifiers[0] : $identifiers;
         return $criteria;
     }
 
@@ -536,6 +546,7 @@ final class Persister implements PersisterInterface
     /**
      * Determines if the current id strategy is supported.
      *
+     * @deprecated
      * @param   string|null     $strategy
      * @return  bool
      */
