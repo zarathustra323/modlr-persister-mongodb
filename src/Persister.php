@@ -131,21 +131,21 @@ final class Persister implements PersisterInterface
 
         $changeset = $model->getChangeSet();
         foreach ($changeset['attributes'] as $key => $values) {
-            $value = $this->prepareAttribute($metadata->getAttribute($key), $values['new']);
+            $value = $this->getFormatter()->getAttributeDbValue($metadata->getAttribute($key), $values['new']);
             if (null === $value) {
                 continue;
             }
             $insert[$key] = $value;
         }
         foreach ($changeset['hasOne'] as $key => $values) {
-            $value = $this->prepareHasOne($metadata->getRelationship($key), $values['new']);
+            $value = $this->getFormatter()->getHasOneDbValue($metadata->getRelationship($key), $values['new']);
             if (null === $value) {
                 continue;
             }
             $insert[$key] = $value;
         }
         foreach ($changeset['hasMany'] as $key => $values) {
-            $value = $this->prepareHasMany($metadata->getRelationship($key), $values['new']);
+            $value = $this->getFormatter()->getHasManyDbValue($metadata->getRelationship($key), $values['new']);
             if (null === $value) {
                 continue;
             }
@@ -158,77 +158,6 @@ final class Persister implements PersisterInterface
             ->execute()
         ;
         return $model;
-    }
-
-    /**
-     * Prepares and formats an attribute value for proper insertion into the database.
-     *
-     * @deprecated
-     * @param   AttributeMetadata   $attrMeta
-     * @param   mixed               $value
-     * @return  mixed
-     */
-    protected function prepareAttribute(AttributeMetadata $attrMeta, $value)
-    {
-        // Handle data type conversion, if needed.
-        if ('date' === $attrMeta->dataType && $value instanceof \DateTime) {
-            return new \MongoDate($value->getTimestamp(), $value->format('u'));
-        }
-        return $value;
-    }
-
-    /**
-     * Prepares and formats a has-one relationship model for proper insertion into the database.
-     *
-     * @deprecated
-     * @param   RelationshipMetadata    $relMeta
-     * @param   Model|null              $model
-     * @return  mixed
-     */
-    protected function prepareHasOne(RelationshipMetadata $relMeta, Model $model = null)
-    {
-        if (null === $model || true === $relMeta->isInverse) {
-            return null;
-        }
-        return $this->createReference($relMeta, $model);
-    }
-
-    /**
-     * Prepares and formats a has-many relationship model set for proper insertion into the database.
-     *
-     * @deprecated
-     * @param   RelationshipMetadata    $relMeta
-     * @param   Model[]|null            $models
-     * @return  mixed
-     */
-    protected function prepareHasMany(RelationshipMetadata $relMeta, array $models = null)
-    {
-        if (null === $models || true === $relMeta->isInverse) {
-            return null;
-        }
-        $references = [];
-        foreach ($models as $model) {
-            $references[] = $this->createReference($relMeta, $model);
-        }
-        return empty($references) ? null : $references;
-    }
-
-    /**
-     * Creates a reference for storage of a related model in the database
-     *
-     * @deprecated
-     * @param   RelationshipMetadata    $relMeta
-     * @param   Model                   $model
-     * @return  mixed
-     */
-    protected function createReference(RelationshipMetadata $relMeta, Model $model)
-    {
-        if (true === $relMeta->isPolymorphic()) {
-            $reference[$this->getIdentifierKey()] = $this->convertId($model->getId());
-            $reference[$this->getPolymorphicKey()] = $model->getType();
-            return $reference;
-        }
-        return $this->convertId($model->getId());
     }
 
     /**
@@ -248,7 +177,7 @@ final class Persister implements PersisterInterface
                 $value = 1;
             } else {
                 $op = '$set';
-                $value = $this->prepareAttribute($metadata->getAttribute($key), $values['new']);
+                $value = $this->getFormatter()->getAttributeDbValue($metadata->getAttribute($key), $values['new']);
             }
             $update[$op][$key] = $value;
         }
@@ -260,7 +189,7 @@ final class Persister implements PersisterInterface
                 $value = 1;
             } else {
                 $op = '$set';
-                $value = $this->prepareHasOne($metadata->getRelationship($key), $values['new']);
+                $value = $this->getFormatter()->getHasOneDbValue($metadata->getRelationship($key), $values['new']);
             }
             $update[$op][$key] = $value;
         }
@@ -271,7 +200,7 @@ final class Persister implements PersisterInterface
                 $value = 1;
             } else {
                 $op = '$set';
-                $value = $this->prepareHasMany($metadata->getRelationship($key), $values['new']);
+                $value = $this->getFormatter()->getHasManyDbValue($metadata->getRelationship($key), $values['new']);
             }
             $update[$op][$key] = $value;
         }
@@ -481,7 +410,7 @@ final class Persister implements PersisterInterface
      */
     protected function getInverseCriteria(EntityMetadata $owner, EntityMetadata $related, $identifiers, $inverseField)
     {
-        $criteria[$inverseField] = $this->getIdentifierCriteria($identifiers);
+        $criteria[$inverseField] = (array) $identifiers;
         if (true === $owner->isChildEntity()) {
             // The owner is owned by a polymorphic model. Must include the type with the inverse field criteria.
             $criteria[$inverseField] = [
@@ -541,17 +470,5 @@ final class Persister implements PersisterInterface
     protected function getModelCollection(EntityMetadata $metadata)
     {
         return $this->connection->selectCollection($metadata->persistence->db, $metadata->persistence->collection);
-    }
-
-    /**
-     * Determines if the current id strategy is supported.
-     *
-     * @deprecated
-     * @param   string|null     $strategy
-     * @return  bool
-     */
-    protected function isIdStrategySupported($strategy)
-    {
-        return (null === $strategy || 'object' === $strategy);
     }
 }
