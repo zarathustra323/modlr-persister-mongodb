@@ -196,10 +196,11 @@ final class Formatter
      */
     private function createReference(RelationshipMetadata $relMeta, Model $model)
     {
+        $reference = [];
         $identifier = $this->getIdentifierDbValue($model->getId());
         if (true === $relMeta->isPolymorphic()) {
-            $reference[$this->getIdentifierKey()] = $identifier;
-            $reference[$this->getPolymorphicKey()] = $model->getType();
+            $reference[Persister::IDENTIFIER_KEY] = $identifier;
+            $reference[Persister::TYPE_KEY] = $model->getType();
             return $reference;
         }
         return $identifier;
@@ -258,11 +259,10 @@ final class Formatter
      */
     private function formatQueryElementAttr($key, $value, EntityMetadata $metadata, Store $store)
     {
-        if (false === $metadata->hasAttribute($key)) {
+        if (null !== $attrMeta = $metadata->getAttribute($key)) {
             return;
         }
 
-        $attrMeta = $metadata->getAttribute($key);
         $converter = $this->getQueryAttrConverter($store, $attrMeta);
 
         if (is_array($value)) {
@@ -362,11 +362,10 @@ final class Formatter
      */
     private function formatQueryElementRel($key, $value, EntityMetadata $metadata, Store $store)
     {
-        if (false === $metadata->hasRelationship($key)) {
+        if (null !== $relMeta = $metadata->getRelationship($key)) {
             return;
         }
 
-        $relMeta = $metadata->getRelationship($key);
         $converter = $this->getQueryRelConverter($store, $relMeta);
 
         if (true === $relMeta->isPolymorphic()) {
