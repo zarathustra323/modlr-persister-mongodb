@@ -2,17 +2,13 @@
 
 namespace As3\Modlr\Persister\MongoDb;
 
-use As3\Modlr\Store\Store;
-use As3\Modlr\Models\Model;
-use As3\Modlr\Models\Collection;
-use As3\Modlr\Metadata\EntityMetadata;
-use As3\Modlr\Metadata\AttributeMetadata;
-use As3\Modlr\Metadata\RelationshipMetadata;
-use As3\Modlr\Persister\PersisterInterface;
-use As3\Modlr\Persister\PersisterException;
-use As3\Modlr\Persister\Record;
-use Doctrine\MongoDB\Connection;
 use \MongoId;
+use As3\Modlr\Metadata\EntityMetadata;
+use As3\Modlr\Models\Model;
+use As3\Modlr\Persister\PersisterException;
+use As3\Modlr\Persister\PersisterInterface;
+use As3\Modlr\Store\Store;
+use Doctrine\MongoDB\Connection;
 
 /**
  * Persists and retrieves models to/from a MongoDB database.
@@ -24,20 +20,6 @@ final class Persister implements PersisterInterface
     const IDENTIFIER_KEY    = '_id';
     const POLYMORPHIC_KEY   = '_type';
     const PERSISTER_KEY     = 'mongodb';
-
-    /**
-     * The Doctine MongoDB connection.
-     *
-     * @var Connection
-     */
-    private $connection;
-
-    /**
-     * The query/database operations formatter.
-     *
-     * @var Formatter
-     */
-    private $formatter;
 
     /**
      * The raw result hydrator.
@@ -52,18 +34,23 @@ final class Persister implements PersisterInterface
     private $smf;
 
     /**
+     * The query service.
+     *
+     * @var Query
+     */
+    private $query;
+
+    /**
      * Constructor.
      *
-     * @param   Connection              $connection
+     * @param   Query                   $query
      * @param   StorageMetadataFactory  $smf
      */
-    public function __construct(Connection $connection, StorageMetadataFactory $smf)
+    public function __construct(Query $query, StorageMetadataFactory $smf)
     {
-        $this->connection = $connection;
-        $this->formatter = new Formatter();
         $this->hydrator = new Hydrator();
         $this->smf = $smf;
-
+        $this->query = $query;
     }
 
     /**
@@ -84,12 +71,11 @@ final class Persister implements PersisterInterface
 
     /**
      * {@inheritDoc}
-     * @todo    Implement sorting and pagination (limit/skip).
      */
     public function all(EntityMetadata $metadata, Store $store, array $identifiers = [])
     {
-        $criteria = $this->getRetrieveCritiera($metadata, $identifiers);
-        $cursor = $this->doQuery($metadata, $store, $criteria);
+        $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $identifiers);
+        $cursor = $this->getQuery()->executeFind($metadata, $store, $criteria);
         return $this->getHydrator()->hydrateMany($metadata, $cursor->toArray(), $store);
     }
 
@@ -98,7 +84,7 @@ final class Persister implements PersisterInterface
      */
     public function query(EntityMetadata $metadata, Store $store, array $criteria, array $fields = [], array $sort = [], $offset = 0, $limit = 0)
     {
-        $cursor = $this->doQuery($metadata, $store, $criteria);
+        $cursor = $this->getQuery()->executeFind($metadata, $store, $criteria);
         return $this->getHydrator()->hydrateMany($metadata, $cursor->toArray(), $store);
     }
 
@@ -107,8 +93,8 @@ final class Persister implements PersisterInterface
      */
     public function inverse(EntityMetadata $owner, EntityMetadata $rel, Store $store, array $identifiers, $inverseField)
     {
-        $criteria = $this->getInverseCriteria($owner, $rel, $identifiers, $inverseField);
-        $cursor = $this->doQuery($rel, $store, $criteria);
+        $criteria = $this->getQuery()->getInverseCriteria($owner, $rel, $identifiers, $inverseField);
+        $cursor = $this->getQuery()->executeFind($rel, $store, $criteria);
         return $this->getHydrator()->hydrateMany($rel, $cursor->toArray(), $store);
     }
 
@@ -117,8 +103,8 @@ final class Persister implements PersisterInterface
      */
     public function retrieve(EntityMetadata $metadata, $identifier, Store $store)
     {
-        $criteria = $this->getRetrieveCritiera($metadata, $identifier);
-        $result = $this->doQuery($metadata, $store, $criteria)->getSingleResult();
+        $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $identifier);
+        $result = $this->getQuery()->executeFind($metadata, $store, $criteria)->getSingleResult();
         if (null === $result) {
             return;
         }
@@ -159,12 +145,8 @@ final class Persister implements PersisterInterface
             }
             $insert[$key] = $value;
         }
-        $this->createQueryBuilder($metadata)
-            ->insert()
-            ->setNewObj($insert)
-            ->getQuery()
-            ->execute()
-        ;
+
+        $this->getQuery()->executeInsert($metadata, $insert);
         return $model;
     }
 
@@ -175,7 +157,7 @@ final class Persister implements PersisterInterface
     public function update(Model $model)
     {
         $metadata = $model->getMetadata();
-        $criteria = $this->getRetrieveCritiera($metadata, $model->getId());
+        $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $model->getId());
         $changeset = $model->getChangeSet();
 
         $update = [];
@@ -217,13 +199,7 @@ final class Persister implements PersisterInterface
             return $model;
         }
 
-        $this->createQueryBuilder($metadata)
-            ->update()
-            ->setQueryArray($criteria)
-            ->setNewObj($update)
-            ->getQuery()
-            ->execute();
-        ;
+        $this->getQuery()->executeUpdate($metadata, $model->getStore(), $criteria, $update);
         return $model;
     }
 
@@ -233,14 +209,8 @@ final class Persister implements PersisterInterface
     public function delete(Model $model)
     {
         $metadata = $model->getMetadata();
-        $criteria = $this->getRetrieveCritiera($metadata, $model->getId());
-
-        $this->createQueryBuilder($metadata)
-            ->remove()
-            ->setQueryArray($criteria)
-            ->getQuery()
-            ->execute();
-        ;
+        $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $model->getId());
+        $this->getQuery()->executeDelete($metadata, $model->getStore(), $criteria);
         return $model;
     }
 
@@ -260,7 +230,7 @@ final class Persister implements PersisterInterface
      */
     public function getFormatter()
     {
-        return $this->formatter;
+        return $this->getQuery()->getFormatter();
     }
 
     /**
@@ -269,6 +239,14 @@ final class Persister implements PersisterInterface
     public function getHydrator()
     {
         return $this->hydrator;
+    }
+
+    /**
+     * @return Query
+     */
+    public function getQuery()
+    {
+        return $this->query;
     }
 
     /**
@@ -301,99 +279,5 @@ final class Persister implements PersisterInterface
     public function extractType(EntityMetadata $metadata, array $data)
     {
         return $this->getHydrator()->extractType($metadata, $data);
-    }
-
-    /**
-     * Finds records from the database based on the provided metadata and criteria.
-     *
-     * @param   EntityMetadata  $metadata   The model metadata that the database should query against.
-     * @param   Store           $store      The store.
-     * @param   array           $criteria   The query criteria.
-     * @param   array           $fields     Fields to include/exclude.
-     * @param   array           $sort       The sort criteria.
-     * @param   int             $offset     The starting offset, aka the number of Models to skip.
-     * @param   int             $limit      The number of Models to limit.
-     * @return  \Doctrine\MongoDB\Cursor
-     */
-    protected function doQuery(EntityMetadata $metadata, Store $store, array $criteria, array $fields = [], array $sort = [], $offset = 0, $limit = 0)
-    {
-        $criteria = $this->getFormatter()->formatQuery($metadata, $store, $criteria);
-        return $this->createQueryBuilder($metadata)
-            ->find()
-            ->setQueryArray($criteria)
-            ->getQuery()
-            ->execute()
-        ;
-    }
-
-    /**
-     * Gets standard database retrieval criteria for an inverse relationship.
-     *
-     * @param   EntityMetadata  $metadata       The entity to retrieve database records for.
-     * @param   string|array    $identifiers    The IDs to query.
-     * @return  array
-     */
-    protected function getInverseCriteria(EntityMetadata $owner, EntityMetadata $related, $identifiers, $inverseField)
-    {
-        $criteria[$inverseField] = (array) $identifiers;
-        if (true === $owner->isChildEntity()) {
-            // The owner is owned by a polymorphic model. Must include the type with the inverse field criteria.
-            $criteria[$inverseField] = [
-                $this->getIdentifierKey()   => $criteria[$inverseField],
-                $this->getPolymorphicKey()  => $owner->type,
-            ];
-        }
-        if (true === $related->isChildEntity()) {
-            // The relationship is owned by a polymorphic model. Must include the type in the root criteria.
-            $criteria[$this->getPolymorphicKey()] = $related->type;
-        }
-        return $criteria;
-    }
-
-    /**
-     * Gets standard database retrieval criteria for an entity and the provided identifiers.
-     *
-     * @param   EntityMetadata      $metadata       The entity to retrieve database records for.
-     * @param   string|array|null   $identifiers    The IDs to query.
-     * @return  array
-     */
-    protected function getRetrieveCritiera(EntityMetadata $metadata, $identifiers = null)
-    {
-        $criteria = [];
-        if (true === $metadata->isChildEntity()) {
-            $criteria[$this->getPolymorphicKey()] = $metadata->type;
-        }
-
-        if (null === $identifiers) {
-            return $criteria;
-        }
-        $identifiers = (array) $identifiers;
-        if (empty($identifiers)) {
-            return $criteria;
-        }
-        $criteria[$this->getIdentifierKey()] = (1 === count($identifiers)) ? $identifiers[0] : $identifiers;
-        return $criteria;
-    }
-
-    /**
-     * Creates a builder object for querying MongoDB based on the provided metadata.
-     *
-     * @param   EntityMetadata  $metadata
-     * @return  \Doctrine\MongoDB\Query\Builder
-     */
-    protected function createQueryBuilder(EntityMetadata $metadata)
-    {
-        return $this->getModelCollection($metadata)->createQueryBuilder();
-    }
-
-    /**
-     * Gets the MongoDB Collection object for a Model.
-     *
-     * @param   EntityMetadata  $metadata
-     * @return  \Doctrine\MongoDB\Collection
-     */
-    protected function getModelCollection(EntityMetadata $metadata)
-    {
-        return $this->connection->selectCollection($metadata->persistence->db, $metadata->persistence->collection);
     }
 }
