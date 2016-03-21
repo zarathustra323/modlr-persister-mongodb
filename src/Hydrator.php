@@ -57,7 +57,7 @@ final class Hydrator
      * Processes multiple, raw MongoDB results and converts them into an array of standardized Record objects.
      *
      * @param   EntityMetadata  $metadata
-     * @param   array           $data
+     * @param   array           $results
      * @param   Store           $store
      * @return  Record[]
      */
@@ -117,8 +117,8 @@ final class Hydrator
      * Extracts the identifier and model type from a raw result and removes them from the source data.
      * Returns as a tuple.
      *
-     * @param   string  $key
-     * @param   array   $data
+     * @param   EntityMetadata  $metadata
+     * @param   array           &$data
      * @return  array
      * @throws  PersisterException
      */
