@@ -40,6 +40,13 @@ final class Persister implements PersisterInterface
     private $formatter;
 
     /**
+     * The raw result hydrator.
+     *
+     * @var Hydrator
+     */
+    private $hydrator;
+
+    /**
      * @var StorageMetadataFactory
      */
     private $smf;
@@ -54,6 +61,7 @@ final class Persister implements PersisterInterface
     {
         $this->connection = $connection;
         $this->formatter = new Formatter();
+        $this->hydrator = new Hydrator();
         $this->smf = $smf;
 
     }
@@ -82,7 +90,7 @@ final class Persister implements PersisterInterface
     {
         $criteria = $this->getRetrieveCritiera($metadata, $identifiers);
         $cursor = $this->doQuery($metadata, $store, $criteria);
-        return $this->hydrateRecords($metadata, $cursor->toArray(), $store);
+        return $this->getHydrator()->hydrateMany($metadata, $cursor->toArray(), $store);
     }
 
     /**
@@ -91,7 +99,7 @@ final class Persister implements PersisterInterface
     public function query(EntityMetadata $metadata, Store $store, array $criteria, array $fields = [], array $sort = [], $offset = 0, $limit = 0)
     {
         $cursor = $this->doQuery($metadata, $store, $criteria);
-        return $this->hydrateRecords($metadata, $cursor->toArray(), $store);
+        return $this->getHydrator()->hydrateMany($metadata, $cursor->toArray(), $store);
     }
 
     /**
@@ -101,7 +109,7 @@ final class Persister implements PersisterInterface
     {
         $criteria = $this->getInverseCriteria($owner, $rel, $identifiers, $inverseField);
         $cursor = $this->doQuery($rel, $store, $criteria);
-        return $this->hydrateRecords($rel, $cursor->toArray(), $store);
+        return $this->getHydrator()->hydrateMany($rel, $cursor->toArray(), $store);
     }
 
     /**
@@ -114,7 +122,7 @@ final class Persister implements PersisterInterface
         if (null === $result) {
             return;
         }
-        return $this->hydrateRecord($metadata, $result, $store);
+        return $this->getHydrator()->hydrateOne($metadata, $result, $store);
     }
 
     /**
@@ -256,6 +264,14 @@ final class Persister implements PersisterInterface
     }
 
     /**
+     * @return  Hydrator
+     */
+    public function getHydrator()
+    {
+        return $this->hydrator;
+    }
+
+    /**
      * {@inheritDoc}
      */
     public function convertId($identifier, $strategy = null)
@@ -284,13 +300,7 @@ final class Persister implements PersisterInterface
      */
     public function extractType(EntityMetadata $metadata, array $data)
     {
-        if (false === $metadata->isPolymorphic()) {
-            return $metadata->type;
-        }
-        if (!isset($data[$this->getPolymorphicKey()])) {
-            throw PersisterException::badRequest(sprintf('Unable to extract polymorphic type. The "%s" key was not found.', $this->getPolymorphicKey()));
-        }
-        return $data[$this->getPolymorphicKey()];
+        return $this->getHydrator()->extractType($metadata, $data);
     }
 
     /**
@@ -314,91 +324,6 @@ final class Persister implements PersisterInterface
             ->getQuery()
             ->execute()
         ;
-    }
-
-    /**
-     * Processes multiple, raw MongoDB results an converts them into an array of standardized Record objects.
-     *
-     * @param   EntityMetadata  $metadata
-     * @param   array           $results
-     * @param   Store           $store
-     * @return  Record[]
-     */
-    protected function hydrateRecords(EntityMetadata $metadata, array $results, Store $store)
-    {
-        $records = [];
-        foreach ($results as $data) {
-            $records[] = $this->hydrateRecord($metadata, $data, $store);
-        }
-        return $records;
-    }
-
-    /**
-     * Processes raw MongoDB data an converts it into a standardized Record object.
-     *
-     * @param   EntityMetadata  $metadata
-     * @param   array           $data
-     * @param   Store           $store
-     * @return  Record
-     */
-    protected function hydrateRecord(EntityMetadata $metadata, array $data, Store $store)
-    {
-        $identifier = $data[$this->getIdentifierKey()];
-        unset($data[$this->getIdentifierKey()]);
-
-        $type = $this->extractType($metadata, $data);
-        unset($data[$this->getPolymorphicKey()]);
-
-        $metadata = $store->getMetadataForType($type);
-        foreach ($metadata->getRelationships() as $key => $relMeta) {
-            if (!isset($data[$key])) {
-                continue;
-            }
-            if (true === $relMeta->isMany() && !is_array($data[$key])) {
-                throw PersisterException::badRequest(sprintf('Relationship key "%s" is a reference many. Expected record data type of array, "%s" found on model "%s" for identifier "%s"', $key, gettype($data[$key]), $type, $identifier));
-            }
-            $references = $relMeta->isOne() ? [$data[$key]] : $data[$key];
-
-            $extracted = [];
-            foreach ($references as $reference) {
-                $extracted[] =  $this->extractRelationship($relMeta, $reference);
-            }
-            $data[$key] = $relMeta->isOne() ? reset($extracted) : $extracted;
-        }
-        return new Record($type, $identifier, $data);
-    }
-
-    /**
-     * Extracts a standard relationship array that the store expects from a raw MongoDB reference value.
-     *
-     * @param   RelationshipMetadata    $relMeta
-     * @param   mixed                   $reference
-     * @return  array
-     * @throws  \RuntimeException   If the relationship could not be extracted.
-     */
-    protected function extractRelationship(RelationshipMetadata $relMeta, $reference)
-    {
-        $simple = false === $relMeta->isPolymorphic();
-        $idKey = $this->getIdentifierKey();
-        $typeKey = $this->getPolymorphicKey();
-        if (true === $simple && is_array($reference) && isset($reference[$idKey])) {
-            return [
-                'id'    => $reference[$idKey],
-                'type'  => $relMeta->getEntityType(),
-            ];
-        } elseif (true === $simple && !is_array($reference)) {
-            return [
-                'id'    => $reference,
-                'type'  => $relMeta->getEntityType(),
-            ];
-        } elseif (false === $simple && is_array($reference) && isset($reference[$idKey]) && isset($reference[$typeKey])) {
-            return [
-                'id'    => $reference[$idKey],
-                'type'  => $reference[$typeKey],
-            ];
-        } else {
-            throw new RuntimeException('Unable to extract a reference id.');
-        }
     }
 
     /**
