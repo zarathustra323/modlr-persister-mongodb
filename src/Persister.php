@@ -9,7 +9,6 @@ use As3\Modlr\Models\Model;
 use As3\Modlr\Persister\PersisterException;
 use As3\Modlr\Persister\PersisterInterface;
 use As3\Modlr\Store\Store;
-use Doctrine\MongoDB\Connection;
 
 /**
  * Persists and retrieves models to/from a MongoDB database.

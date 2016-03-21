@@ -57,7 +57,7 @@ final class Query
      *
      * @param   EntityMetadata  $metadata
      * @param   Store           $store
-     * @param   array           $toInsert
+     * @param   array           $criteria
      * @return  array|bool
      */
     public function executeDelete(EntityMetadata $metadata, Store $store, array $criteria)
@@ -148,13 +148,17 @@ final class Query
     /**
      * Gets standard database retrieval criteria for an inverse relationship.
      *
-     * @param   EntityMetadata  $metadata       The entity to retrieve database records for.
-     * @param   string|array    $identifiers    The IDs to query.
+     * @param   EntityMetadata  $owner
+     * @param   EntityMetadata  $related
+     * @param   string|array    $identifiers
+     * @param   string          $inverseField
      * @return  array
      */
     public function getInverseCriteria(EntityMetadata $owner, EntityMetadata $related, $identifiers, $inverseField)
     {
-        $criteria[$inverseField] = (array) $identifiers;
+        $criteria = [
+            $inverseField   => (array) $identifiers,
+        ];
         if (true === $owner->isChildEntity()) {
             // The owner is owned by a polymorphic model. Must include the type with the inverse field criteria.
             $criteria[$inverseField] = [

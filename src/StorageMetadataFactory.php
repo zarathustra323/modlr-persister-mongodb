@@ -4,7 +4,6 @@ namespace As3\Modlr\Persister\MongoDb;
 
 use As3\Modlr\Exception\MetadataException;
 use As3\Modlr\Metadata\EntityMetadata;
-use As3\Modlr\Metadata\Interfaces\StorageLayerInterface;
 use As3\Modlr\Metadata\Interfaces\StorageMetadataFactoryInterface;
 use As3\Modlr\Util\EntityUtility;
 
@@ -24,7 +23,7 @@ final class StorageMetadataFactory implements StorageMetadataFactoryInterface
     /**
      * Constructor.
      *
-     * @param   EntityUtility   $entityUtl
+     * @param   EntityUtility   $entityUtil
      */
     public function __construct(EntityUtility $entityUtil)
     {
