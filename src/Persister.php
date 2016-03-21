@@ -2,6 +2,7 @@
 
 namespace As3\Modlr\Persister\MongoDb;
 
+use \Closure;
 use \MongoId;
 use As3\Modlr\Metadata\EntityMetadata;
 use As3\Modlr\Models\Model;
@@ -20,6 +21,17 @@ final class Persister implements PersisterInterface
     const IDENTIFIER_KEY    = '_id';
     const POLYMORPHIC_KEY   = '_type';
     const PERSISTER_KEY     = 'mongodb';
+
+    /**
+     * Provides a map of changeset methods.
+     *
+     * @var array
+     */
+    private $changeSetMethods = [
+        'attributes'    => ['getAttribute', 'getAttributeDbValue'],
+        'hasOne'        => ['getRelationship', 'getHasOneDbValue'],
+        'hasMany'       => ['getRelationship', 'getHasManyDbValue'],
+    ];
 
     /**
      * The raw result hydrator.
@@ -78,34 +90,7 @@ final class Persister implements PersisterInterface
     public function create(Model $model)
     {
         $metadata = $model->getMetadata();
-        $insert[$this->getIdentifierKey()] = $this->convertId($model->getId());
-        if (true === $metadata->isChildEntity()) {
-            $insert[$this->getPolymorphicKey()] = $metadata->type;
-        }
-
-        $changeset = $model->getChangeSet();
-        foreach ($changeset['attributes'] as $key => $values) {
-            $value = $this->getFormatter()->getAttributeDbValue($metadata->getAttribute($key), $values['new']);
-            if (null === $value) {
-                continue;
-            }
-            $insert[$key] = $value;
-        }
-        foreach ($changeset['hasOne'] as $key => $values) {
-            $value = $this->getFormatter()->getHasOneDbValue($metadata->getRelationship($key), $values['new']);
-            if (null === $value) {
-                continue;
-            }
-            $insert[$key] = $value;
-        }
-        foreach ($changeset['hasMany'] as $key => $values) {
-            $value = $this->getFormatter()->getHasManyDbValue($metadata->getRelationship($key), $values['new']);
-            if (null === $value) {
-                continue;
-            }
-            $insert[$key] = $value;
-        }
-
+        $insert = $this->createInsertObj($model);
         $this->getQuery()->executeInsert($metadata, $insert);
         return $model;
     }
@@ -236,42 +221,7 @@ final class Persister implements PersisterInterface
     {
         $metadata = $model->getMetadata();
         $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $model->getId());
-        $changeset = $model->getChangeSet();
-
-        $update = [];
-        foreach ($changeset['attributes'] as $key => $values) {
-            if (null === $values['new']) {
-                $op = '$unset';
-                $value = 1;
-            } else {
-                $op = '$set';
-                $value = $this->getFormatter()->getAttributeDbValue($metadata->getAttribute($key), $values['new']);
-            }
-            $update[$op][$key] = $value;
-        }
-
-        // @todo Must prevent inverse relationships from persisting
-        foreach ($changeset['hasOne'] as $key => $values) {
-            if (null === $values['new']) {
-                $op = '$unset';
-                $value = 1;
-            } else {
-                $op = '$set';
-                $value = $this->getFormatter()->getHasOneDbValue($metadata->getRelationship($key), $values['new']);
-            }
-            $update[$op][$key] = $value;
-        }
-
-        foreach ($changeset['hasMany'] as $key => $values) {
-            if (null === $values['new']) {
-                $op = '$unset';
-                $value = 1;
-            } else {
-                $op = '$set';
-                $value = $this->getFormatter()->getHasManyDbValue($metadata->getRelationship($key), $values['new']);
-            }
-            $update[$op][$key] = $value;
-        }
+        $update = $this->createUpdateObj($model);
 
         if (empty($update)) {
             return $model;
@@ -279,5 +229,91 @@ final class Persister implements PersisterInterface
 
         $this->getQuery()->executeUpdate($metadata, $model->getStore(), $criteria, $update);
         return $model;
+    }
+
+    /**
+     * Appends the change set values to a database object based on the provided handler.
+     *
+     * @param   Model   $model
+     * @param   array   $obj
+     * @param   Closure $handler
+     * @return  array
+     */
+    private function appendChangeSet(Model $model, array $obj, Closure $handler)
+    {
+        $metadata = $model->getMetadata();
+        $changeset = $model->getChangeSet();
+        $formatter = $this->getFormatter();
+
+        foreach ($this->changeSetMethods as $setKey => $methods) {
+            list($metaMethod, $formatMethod) = $methods;
+            foreach ($changeset[$setKey] as $key => $values) {
+                $value = $formatter->$formatMethod($metadata->$metaMethod($key), $values['new']);
+                $obj = $handler($key, $value, $obj);
+            }
+        }
+        return $obj;
+    }
+
+    /**
+     * Creates the database insert object for a Model.
+     *
+     * @param   Model   $model
+     * @return  array
+     */
+    private function createInsertObj(Model $model)
+    {
+        $metadata = $model->getMetadata();
+        $insert = [
+            $this->getIdentifierKey()   => $this->convertId($model->getId()),
+        ];
+        if (true === $metadata->isChildEntity()) {
+            $insert[$this->getPolymorphicKey()] = $metadata->type;
+        }
+        return $this->appendChangeSet($model, $insert, $this->getCreateChangeSetHandler());
+    }
+
+    /**
+     * Creates the database update object for a Model.
+     *
+     * @param   Model   $model
+     * @return  array
+     */
+    private function createUpdateObj(Model $model)
+    {
+        return $this->appendChangeSet($model, [], $this->getUpdateChangeSetHandler());
+    }
+
+    /**
+     * Gets the change set handler Closure for create.
+     *
+     * @return  Closure
+     */
+    private function getCreateChangeSetHandler()
+    {
+        return function ($key, $value, $obj) {
+            if (null !== $value) {
+                $obj[$key] = $value;
+            }
+            return $obj;
+        };
+    }
+
+    /**
+     * Gets the change set handler Closure for update.
+     *
+     * @return  Closure
+     */
+    private function getUpdateChangeSetHandler()
+    {
+        return function ($key, $value, $obj) {
+            $op = '$set';
+            if (null === $value) {
+                $op = '$unset';
+                $value = 1;
+            }
+            $obj[$op][$key] = $value;
+            return $obj;
+        };
     }
 }
