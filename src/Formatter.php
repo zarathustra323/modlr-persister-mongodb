@@ -313,7 +313,7 @@ final class Formatter
 
         if ($this->isTypeField($subKey)) {
             // Handle as a model type field.
-            list($key, $value) = $this->formatQueryElementType($subKey, $value);
+            list($key, $value) = $this->formatQueryElementRoot($subKey, $value, $metadata);
             $key = (true === $hasIndex) ? sprintf('%s.%s.%s', $root, $parts[0], $key) : sprintf('%s.%s', $root, $key);
             return [$key, $value];
         }
@@ -442,7 +442,7 @@ final class Formatter
     private function getQueryRelConverter(Store $store, RelationshipMetadata $relMeta)
     {
         $related = $store->getMetadataForType($relMeta->getEntityType());
-        return $this->getQueryRootConverter($related, $related->getKey());
+        return $this->getQueryRootConverter($related, Persister::IDENTIFIER_KEY);
     }
 
     /**
