@@ -218,13 +218,8 @@ final class Formatter
      */
     private function formatQueryElement($key, $value, EntityMetadata $metadata, Store $store)
     {
-        // Handle identifiers.
-        if (null !== $result = $this->formatQueryElementId($key, $value, $metadata)) {
-            return $result;
-        }
-
-        // Handle polymorphic model type fields.
-        if (null !== $result = $this->formatQueryElementType($key, $value)) {
+        // Handle root fields: id or model type.
+        if (null !== $result = $this->formatQueryElementRoot($key, $value, $metadata)) {
             return $result;
         }
 
@@ -259,7 +254,7 @@ final class Formatter
      */
     private function formatQueryElementAttr($key, $value, EntityMetadata $metadata, Store $store)
     {
-        if (null !== $attrMeta = $metadata->getAttribute($key)) {
+        if (null === $attrMeta = $metadata->getAttribute($key)) {
             return;
         }
 
@@ -326,31 +321,6 @@ final class Formatter
     }
 
     /**
-     * Formats an identifier query element.
-     * Returns a tuple of the formatted key and value, or null if the key is not an identifier field.
-     *
-     * @param   string          $key
-     * @param   mixed           $value
-     * @param   EntityMetadata  $metadata
-     * @return  array|null
-     */
-    private function formatQueryElementId($key, $value, EntityMetadata $metadata)
-    {
-        if (false === $this->isIdentifierField($key)) {
-            return;
-        }
-
-        $dbIdKey = Persister::IDENTIFIER_KEY;
-        $converter = $this->getQueryIdConverter($metadata);
-
-        if (is_array($value)) {
-            $value = (true === $this->hasOperators($value)) ? $value : ['$in' => $value];
-            return [$dbIdKey, $this->formatQueryExpression($value, $converter)];
-        }
-        return [$dbIdKey, $converter($value)];
-    }
-
-    /**
      * Formats a relationship query element.
      * Returns a tuple of the formatted key and value, or null if the key is not a relationship field.
      *
@@ -362,7 +332,7 @@ final class Formatter
      */
     private function formatQueryElementRel($key, $value, EntityMetadata $metadata, Store $store)
     {
-        if (null !== $relMeta = $metadata->getRelationship($key)) {
+        if (null === $relMeta = $metadata->getRelationship($key)) {
             return;
         }
 
@@ -379,28 +349,32 @@ final class Formatter
         return [$key, $converter($value)];
     }
 
+
     /**
-     * Formats a model type query element.
-     * Returns a tuple of the formatted key and value, or null if the key is not a type field.
+     * Formats a root query element: either id or model type.
+     * Returns a tuple of the formatted key and value, or null if the key is not a root field.
      *
-     * @param   string  $key
-     * @param   mixed   $value
+     * @param   string          $key
+     * @param   mixed           $value
+     * @param   EntityMetadata  $metadata
      * @return  array|null
      */
-    private function formatQueryElementType($key, $value)
+    private function formatQueryElementRoot($key, $value, EntityMetadata $metadata)
     {
-        if (false === $this->isTypeField($key)) {
+        if (true === $this->isIdentifierField($key)) {
+            $dbKey = Persister::IDENTIFIER_KEY;
+        } elseif (true === $this->isTypeField($key)) {
+            $dbKey = Persister::POLYMORPHIC_KEY;
+        } else {
             return;
         }
 
-        $dbTypeKey = Persister::POLYMORPHIC_KEY;
-        $converter = $this->getQueryTypeConverter();
-
+        $converter = $this->getQueryRootConverter($metadata, $dbKey);
         if (is_array($value)) {
             $value = (true === $this->hasOperators($value)) ? $value : ['$in' => $value];
-            return [$dbTypeKey, $this->formatQueryExpression($value, $converter)];
+            return [$dbKey, $this->formatQueryExpression($value, $converter)];
         }
-        return [$dbTypeKey, $converter($value)];
+        return [$dbKey, $converter($value)];
     }
 
     /**
@@ -459,19 +433,6 @@ final class Formatter
     }
 
     /**
-     * Gets the converter for handling identifier values in queries.
-     *
-     * @param   EntityMetadata  $metadata
-     * @return  Closure
-     */
-    private function getQueryIdConverter(EntityMetadata $metadata)
-    {
-        return function($value) use ($metadata) {
-            return $this->getIdentifierDbValue($value, $metadata->persistence->idStrategy);
-        };
-    }
-
-    /**
      * Gets the converter for handling relationship values in queries.
      *
      * @param   Store                   $store
@@ -481,18 +442,24 @@ final class Formatter
     private function getQueryRelConverter(Store $store, RelationshipMetadata $relMeta)
     {
         $related = $store->getMetadataForType($relMeta->getEntityType());
-        return $this->getQueryIdConverter($related);
+        return $this->getQueryRootConverter($related, $related->getKey());
     }
 
     /**
-     * Gets the converter for handling model type values in queries.
+     * Gets the converter for handling root field values in queries (id or model type).
      *
+     * @param   EntityMetadata  $metadata
+     * @param   string          $key
      * @return  Closure
      */
-    private function getQueryTypeConverter()
+    private function getQueryRootConverter(EntityMetadata $metadata, $key)
     {
-        return function($value) {
-            return $value;
+        return function($value) use ($metadata, $key) {
+            if ($key === Persister::POLYMORPHIC_KEY) {
+                return $value;
+            }
+            $strategy = ($metadata->persistence instanceof StorageMetadata) ? $metadata->persistence->idStrategy : null;
+            return $this->getIdentifierDbValue($value, $strategy);
         };
     }
 
