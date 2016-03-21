@@ -56,22 +56,6 @@ final class Persister implements PersisterInterface
     /**
      * {@inheritDoc}
      */
-    public function getPersisterKey()
-    {
-        return self::PERSISTER_KEY;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function getPersistenceMetadataFactory()
-    {
-        return $this->smf;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
     public function all(EntityMetadata $metadata, Store $store, array $identifiers = [])
     {
         $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $identifiers);
@@ -82,33 +66,9 @@ final class Persister implements PersisterInterface
     /**
      * {@inheritDoc}
      */
-    public function query(EntityMetadata $metadata, Store $store, array $criteria, array $fields = [], array $sort = [], $offset = 0, $limit = 0)
+    public function convertId($identifier, $strategy = null)
     {
-        $cursor = $this->getQuery()->executeFind($metadata, $store, $criteria);
-        return $this->getHydrator()->hydrateMany($metadata, $cursor->toArray(), $store);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function inverse(EntityMetadata $owner, EntityMetadata $rel, Store $store, array $identifiers, $inverseField)
-    {
-        $criteria = $this->getQuery()->getInverseCriteria($owner, $rel, $identifiers, $inverseField);
-        $cursor = $this->getQuery()->executeFind($rel, $store, $criteria);
-        return $this->getHydrator()->hydrateMany($rel, $cursor->toArray(), $store);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function retrieve(EntityMetadata $metadata, $identifier, Store $store)
-    {
-        $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $identifier);
-        $result = $this->getQuery()->executeFind($metadata, $store, $criteria)->getSingleResult();
-        if (null === $result) {
-            return;
-        }
-        return $this->getHydrator()->hydrateOne($metadata, $result, $store);
+        return $this->getFormatter()->getIdentifierDbValue($identifier, $strategy);
     }
 
     /**
@@ -148,6 +108,124 @@ final class Persister implements PersisterInterface
 
         $this->getQuery()->executeInsert($metadata, $insert);
         return $model;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function delete(Model $model)
+    {
+        $metadata = $model->getMetadata();
+        $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $model->getId());
+        $this->getQuery()->executeDelete($metadata, $model->getStore(), $criteria);
+        return $model;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function extractType(EntityMetadata $metadata, array $data)
+    {
+        return $this->getHydrator()->extractType($metadata, $data);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function generateId($strategy = null)
+    {
+        if (false === $this->getFormatter()->isIdStrategySupported($strategy)) {
+            throw PersisterException::nyi('ID generation currently only supports an object strategy, or none at all.');
+        }
+        return new MongoId();
+    }
+
+    /**
+     * @return  Formatter
+     */
+    public function getFormatter()
+    {
+        return $this->getQuery()->getFormatter();
+    }
+
+    /**
+     * @return  Hydrator
+     */
+    public function getHydrator()
+    {
+        return $this->hydrator;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function getIdentifierKey()
+    {
+        return self::IDENTIFIER_KEY;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function getPersistenceMetadataFactory()
+    {
+        return $this->smf;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function getPersisterKey()
+    {
+        return self::PERSISTER_KEY;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function getPolymorphicKey()
+    {
+        return self::POLYMORPHIC_KEY;
+    }
+
+    /**
+     * @return Query
+     */
+    public function getQuery()
+    {
+        return $this->query;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function inverse(EntityMetadata $owner, EntityMetadata $rel, Store $store, array $identifiers, $inverseField)
+    {
+        $criteria = $this->getQuery()->getInverseCriteria($owner, $rel, $identifiers, $inverseField);
+        $cursor = $this->getQuery()->executeFind($rel, $store, $criteria);
+        return $this->getHydrator()->hydrateMany($rel, $cursor->toArray(), $store);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function query(EntityMetadata $metadata, Store $store, array $criteria, array $fields = [], array $sort = [], $offset = 0, $limit = 0)
+    {
+        $cursor = $this->getQuery()->executeFind($metadata, $store, $criteria);
+        return $this->getHydrator()->hydrateMany($metadata, $cursor->toArray(), $store);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function retrieve(EntityMetadata $metadata, $identifier, Store $store)
+    {
+        $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $identifier);
+        $result = $this->getQuery()->executeFind($metadata, $store, $criteria)->getSingleResult();
+        if (null === $result) {
+            return;
+        }
+        return $this->getHydrator()->hydrateOne($metadata, $result, $store);
     }
 
     /**
@@ -201,83 +279,5 @@ final class Persister implements PersisterInterface
 
         $this->getQuery()->executeUpdate($metadata, $model->getStore(), $criteria, $update);
         return $model;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function delete(Model $model)
-    {
-        $metadata = $model->getMetadata();
-        $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $model->getId());
-        $this->getQuery()->executeDelete($metadata, $model->getStore(), $criteria);
-        return $model;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function generateId($strategy = null)
-    {
-        if (false === $this->getFormatter()->isIdStrategySupported($strategy)) {
-            throw PersisterException::nyi('ID generation currently only supports an object strategy, or none at all.');
-        }
-        return new MongoId();
-    }
-
-    /**
-     * @return  Formatter
-     */
-    public function getFormatter()
-    {
-        return $this->getQuery()->getFormatter();
-    }
-
-    /**
-     * @return  Hydrator
-     */
-    public function getHydrator()
-    {
-        return $this->hydrator;
-    }
-
-    /**
-     * @return Query
-     */
-    public function getQuery()
-    {
-        return $this->query;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function convertId($identifier, $strategy = null)
-    {
-        return $this->getFormatter()->getIdentifierDbValue($identifier, $strategy);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function getIdentifierKey()
-    {
-        return self::IDENTIFIER_KEY;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function getPolymorphicKey()
-    {
-        return self::POLYMORPHIC_KEY;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function extractType(EntityMetadata $metadata, array $data)
-    {
-        return $this->getHydrator()->extractType($metadata, $data);
     }
 }
