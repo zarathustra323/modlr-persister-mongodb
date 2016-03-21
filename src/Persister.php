@@ -2,17 +2,13 @@
 
 namespace As3\Modlr\Persister\MongoDb;
 
-use As3\Modlr\Store\Store;
-use As3\Modlr\Models\Model;
-use As3\Modlr\Models\Collection;
-use As3\Modlr\Metadata\EntityMetadata;
-use As3\Modlr\Metadata\AttributeMetadata;
-use As3\Modlr\Metadata\RelationshipMetadata;
-use As3\Modlr\Persister\PersisterInterface;
-use As3\Modlr\Persister\PersisterException;
-use As3\Modlr\Persister\Record;
-use Doctrine\MongoDB\Connection;
+use \Closure;
 use \MongoId;
+use As3\Modlr\Metadata\EntityMetadata;
+use As3\Modlr\Models\Model;
+use As3\Modlr\Persister\PersisterException;
+use As3\Modlr\Persister\PersisterInterface;
+use As3\Modlr\Store\Store;
 
 /**
  * Persists and retrieves models to/from a MongoDB database.
@@ -26,11 +22,22 @@ final class Persister implements PersisterInterface
     const PERSISTER_KEY     = 'mongodb';
 
     /**
-     * The Doctine MongoDB connection.
+     * Provides a map of changeset methods.
      *
-     * @var Connection
+     * @var array
      */
-    private $connection;
+    private $changeSetMethods = [
+        'attributes'    => ['getAttribute', 'getAttributeDbValue'],
+        'hasOne'        => ['getRelationship', 'getHasOneDbValue'],
+        'hasMany'       => ['getRelationship', 'getHasManyDbValue'],
+    ];
+
+    /**
+     * The raw result hydrator.
+     *
+     * @var Hydrator
+     */
+    private $hydrator;
 
     /**
      * @var StorageMetadataFactory
@@ -38,65 +45,41 @@ final class Persister implements PersisterInterface
     private $smf;
 
     /**
+     * The query service.
+     *
+     * @var Query
+     */
+    private $query;
+
+    /**
      * Constructor.
      *
-     * @param   Connection              $connection
+     * @param   Query                   $query
      * @param   StorageMetadataFactory  $smf
      */
-    public function __construct(Connection $connection, StorageMetadataFactory $smf)
+    public function __construct(Query $query, StorageMetadataFactory $smf)
     {
-        $this->connection = $connection;
+        $this->hydrator = new Hydrator();
         $this->smf = $smf;
+        $this->query = $query;
     }
 
     /**
      * {@inheritDoc}
-     */
-    public function getPersisterKey()
-    {
-        return self::PERSISTER_KEY;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function getPersistenceMetadataFactory()
-    {
-        return $this->smf;
-    }
-
-    /**
-     * {@inheritDoc}
-     * @todo    Implement sorting and pagination (limit/skip).
      */
     public function all(EntityMetadata $metadata, Store $store, array $identifiers = [])
     {
-        $criteria = $this->getRetrieveCritiera($metadata, $identifiers);
-        $cursor = $this->findFromDatabase($metadata, $criteria);
-        return $this->hydrateRecords($metadata, $cursor->toArray(), $store);
+        $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $identifiers);
+        $cursor = $this->getQuery()->executeFind($metadata, $store, $criteria);
+        return $this->getHydrator()->hydrateMany($metadata, $cursor->toArray(), $store);
     }
 
     /**
      * {@inheritDoc}
      */
-    public function inverse(EntityMetadata $owner, EntityMetadata $rel, Store $store, array $identifiers, $inverseField)
+    public function convertId($identifier, $strategy = null)
     {
-        $criteria = $this->getInverseCriteria($owner, $rel, $identifiers, $inverseField);
-        $cursor = $this->findFromDatabase($rel, $criteria);
-        return $this->hydrateRecords($rel, $cursor->toArray(), $store);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function retrieve(EntityMetadata $metadata, $identifier, Store $store)
-    {
-        $criteria = $this->getRetrieveCritiera($metadata, $identifier);
-        $result = $this->findFromDatabase($metadata, $criteria)->getSingleResult();
-        if (null === $result) {
-            return;
-        }
-        return $this->hydrateRecord($metadata, $result, $store);
+        return $this->getFormatter()->getIdentifierDbValue($identifier, $strategy);
     }
 
     /**
@@ -106,165 +89,8 @@ final class Persister implements PersisterInterface
     public function create(Model $model)
     {
         $metadata = $model->getMetadata();
-        $insert[$this->getIdentifierKey()] = $this->convertId($model->getId());
-        if (true === $metadata->isChildEntity()) {
-            $insert[$this->getPolymorphicKey()] = $metadata->type;
-        }
-
-        $changeset = $model->getChangeSet();
-        foreach ($changeset['attributes'] as $key => $values) {
-            $value = $this->prepareAttribute($metadata->getAttribute($key), $values['new']);
-            if (null === $value) {
-                continue;
-            }
-            $insert[$key] = $value;
-        }
-        foreach ($changeset['hasOne'] as $key => $values) {
-            $value = $this->prepareHasOne($metadata->getRelationship($key), $values['new']);
-            if (null === $value) {
-                continue;
-            }
-            $insert[$key] = $value;
-        }
-        foreach ($changeset['hasMany'] as $key => $values) {
-            $value = $this->prepareHasMany($metadata->getRelationship($key), $values['new']);
-            if (null === $value) {
-                continue;
-            }
-            $insert[$key] = $value;
-        }
-        $this->createQueryBuilder($metadata)
-            ->insert()
-            ->setNewObj($insert)
-            ->getQuery()
-            ->execute()
-        ;
-        return $model;
-    }
-
-    /**
-     * Prepares and formats an attribute value for proper insertion into the database.
-     *
-     * @param   AttributeMetadata   $attrMeta
-     * @param   mixed               $value
-     * @return  mixed
-     */
-    protected function prepareAttribute(AttributeMetadata $attrMeta, $value)
-    {
-        // Handle data type conversion, if needed.
-        if ('date' === $attrMeta->dataType) {
-            return new \MongoDate($value->getTimestamp(), $value->format('u'));
-        }
-        return $value;
-    }
-
-    /**
-     * Prepares and formats a has-one relationship model for proper insertion into the database.
-     *
-     * @param   RelationshipMetadata    $relMeta
-     * @param   Model|null              $model
-     * @return  mixed
-     */
-    protected function prepareHasOne(RelationshipMetadata $relMeta, Model $model = null)
-    {
-        if (null === $model || true === $relMeta->isInverse) {
-            return null;
-        }
-        return $this->createReference($relMeta, $model);
-    }
-
-    /**
-     * Prepares and formats a has-many relationship model set for proper insertion into the database.
-     *
-     * @param   RelationshipMetadata    $relMeta
-     * @param   Model[]|null            $models
-     * @return  mixed
-     */
-    protected function prepareHasMany(RelationshipMetadata $relMeta, array $models = null)
-    {
-        if (null === $models || true === $relMeta->isInverse) {
-            return null;
-        }
-        $references = [];
-        foreach ($models as $model) {
-            $references[] = $this->createReference($relMeta, $model);
-        }
-        return empty($references) ? null : $references;
-    }
-
-    /**
-     * Creates a reference for storage of a related model in the database
-     *
-     * @param   RelationshipMetadata    $relMeta
-     * @param   Model                   $model
-     * @return  mixed
-     */
-    protected function createReference(RelationshipMetadata $relMeta, Model $model)
-    {
-        if (true === $relMeta->isPolymorphic()) {
-            $reference[$this->getIdentifierKey()] = $this->convertId($model->getId());
-            $reference[$this->getPolymorphicKey()] = $model->getType();
-            return $reference;
-        }
-        return $this->convertId($model->getId());
-    }
-
-    /**
-     * {@inheritDoc}
-     * @todo    Optimize the changeset to query generation.
-     */
-    public function update(Model $model)
-    {
-        $metadata = $model->getMetadata();
-        $criteria = $this->getRetrieveCritiera($metadata, $model->getId());
-        $changeset = $model->getChangeSet();
-
-        $update = [];
-        foreach ($changeset['attributes'] as $key => $values) {
-            if (null === $values['new']) {
-                $op = '$unset';
-                $value = 1;
-            } else {
-                $op = '$set';
-                $value = $this->prepareAttribute($metadata->getAttribute($key), $values['new']);
-            }
-            $update[$op][$key] = $value;
-        }
-
-        // @todo Must prevent inverse relationships from persisting
-        foreach ($changeset['hasOne'] as $key => $values) {
-            if (null === $values['new']) {
-                $op = '$unset';
-                $value = 1;
-            } else {
-                $op = '$set';
-                $value = $this->prepareHasOne($metadata->getRelationship($key), $values['new']);
-            }
-            $update[$op][$key] = $value;
-        }
-
-        foreach ($changeset['hasMany'] as $key => $values) {
-            if (null === $values['new']) {
-                $op = '$unset';
-                $value = 1;
-            } else {
-                $op = '$set';
-                $value = $this->prepareHasMany($metadata->getRelationship($key), $values['new']);
-            }
-            $update[$op][$key] = $value;
-        }
-
-        if (empty($update)) {
-            return $model;
-        }
-
-        $this->createQueryBuilder($metadata)
-            ->update()
-            ->setQueryArray($criteria)
-            ->setNewObj($update)
-            ->getQuery()
-            ->execute();
-        ;
+        $insert = $this->createInsertObj($model);
+        $this->getQuery()->executeInsert($metadata, $insert);
         return $model;
     }
 
@@ -274,15 +100,17 @@ final class Persister implements PersisterInterface
     public function delete(Model $model)
     {
         $metadata = $model->getMetadata();
-        $criteria = $this->getRetrieveCritiera($metadata, $model->getId());
-
-        $this->createQueryBuilder($metadata)
-            ->remove()
-            ->setQueryArray($criteria)
-            ->getQuery()
-            ->execute();
-        ;
+        $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $model->getId());
+        $this->getQuery()->executeDelete($metadata, $model->getStore(), $criteria);
         return $model;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function extractType(EntityMetadata $metadata, array $data)
+    {
+        return $this->getHydrator()->extractType($metadata, $data);
     }
 
     /**
@@ -290,24 +118,26 @@ final class Persister implements PersisterInterface
      */
     public function generateId($strategy = null)
     {
-        if (false === $this->isIdStrategySupported($strategy)) {
+        if (false === $this->getFormatter()->isIdStrategySupported($strategy)) {
             throw PersisterException::nyi('ID generation currently only supports an object strategy, or none at all.');
         }
         return new MongoId();
     }
 
     /**
-     * {@inheritDoc}
+     * @return  Formatter
      */
-    public function convertId($identifier, $strategy = null)
+    public function getFormatter()
     {
-        if (false === $this->isIdStrategySupported($strategy)) {
-            throw PersisterException::nyi('ID conversion currently only supports an object strategy, or none at all.');
-        }
-        if ($identifier instanceof MongoId) {
-            return $identifier;
-        }
-        return new MongoId($identifier);
+        return $this->getQuery()->getFormatter();
+    }
+
+    /**
+     * @return  Hydrator
+     */
+    public function getHydrator()
+    {
+        return $this->hydrator;
     }
 
     /**
@@ -321,226 +151,168 @@ final class Persister implements PersisterInterface
     /**
      * {@inheritDoc}
      */
+    public function getPersistenceMetadataFactory()
+    {
+        return $this->smf;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function getPersisterKey()
+    {
+        return self::PERSISTER_KEY;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
     public function getPolymorphicKey()
     {
         return self::POLYMORPHIC_KEY;
     }
 
     /**
+     * @return Query
+     */
+    public function getQuery()
+    {
+        return $this->query;
+    }
+
+    /**
      * {@inheritDoc}
      */
-    public function extractType(EntityMetadata $metadata, array $data)
+    public function inverse(EntityMetadata $owner, EntityMetadata $rel, Store $store, array $identifiers, $inverseField)
     {
-        if (false === $metadata->isPolymorphic()) {
-            return $metadata->type;
-        }
-        if (!isset($data[$this->getPolymorphicKey()])) {
-            throw PersisterException::badRequest(sprintf('Unable to extract polymorphic type. The "%s" key was not found.', $this->getPolymorphicKey()));
-        }
-        return $data[$this->getPolymorphicKey()];
+        $criteria = $this->getQuery()->getInverseCriteria($owner, $rel, $identifiers, $inverseField);
+        $cursor = $this->getQuery()->executeFind($rel, $store, $criteria);
+        return $this->getHydrator()->hydrateMany($rel, $cursor->toArray(), $store);
     }
 
     /**
-     * Finds records from the database based on the provided metadata and criteria.
-     *
-     * @param   EntityMetadata  $metadata   The model metadata that the database should query against.
-     * @param   array           $criteria   The query criteria.
-     * @return  \Doctrine\MongoDB\Cursor
+     * {@inheritDoc}
      */
-    protected function findFromDatabase(EntityMetadata $metadata, array $criteria)
+    public function query(EntityMetadata $metadata, Store $store, array $criteria, array $fields = [], array $sort = [], $offset = 0, $limit = 0)
     {
-        return $this->createQueryBuilder($metadata)
-            ->find()
-            ->setQueryArray($criteria)
-            ->getQuery()
-            ->execute()
-        ;
+        $cursor = $this->getQuery()->executeFind($metadata, $store, $criteria);
+        return $this->getHydrator()->hydrateMany($metadata, $cursor->toArray(), $store);
     }
 
     /**
-     * Processes multiple, raw MongoDB results an converts them into an array of standardized Record objects.
-     *
-     * @param   EntityMetadata  $metadata
-     * @param   array           $results
-     * @param   Store           $store
-     * @return  Record[]
+     * {@inheritDoc}
      */
-    protected function hydrateRecords(EntityMetadata $metadata, array $results, Store $store)
+    public function retrieve(EntityMetadata $metadata, $identifier, Store $store)
     {
-        $records = [];
-        foreach ($results as $data) {
-            $records[] = $this->hydrateRecord($metadata, $data, $store);
+        $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $identifier);
+        $result = $this->getQuery()->executeFind($metadata, $store, $criteria)->getSingleResult();
+        if (null === $result) {
+            return;
         }
-        return $records;
+        return $this->getHydrator()->hydrateOne($metadata, $result, $store);
     }
 
     /**
-     * Processes raw MongoDB data an converts it into a standardized Record object.
-     *
-     * @param   EntityMetadata  $metadata
-     * @param   array           $data
-     * @param   Store           $store
-     * @return  Record
+     * {@inheritDoc}
+     * @todo    Optimize the changeset to query generation.
      */
-    protected function hydrateRecord(EntityMetadata $metadata, array $data, Store $store)
+    public function update(Model $model)
     {
-        $identifier = $data[$this->getIdentifierKey()];
-        unset($data[$this->getIdentifierKey()]);
+        $metadata = $model->getMetadata();
+        $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $model->getId());
+        $update = $this->createUpdateObj($model);
 
-        $type = $this->extractType($metadata, $data);
-        unset($data[$this->getPolymorphicKey()]);
-
-        $metadata = $store->getMetadataForType($type);
-        foreach ($metadata->getRelationships() as $key => $relMeta) {
-            if (!isset($data[$key])) {
-                continue;
-            }
-            if (true === $relMeta->isMany() && !is_array($data[$key])) {
-                throw PersisterException::badRequest(sprintf('Relationship key "%s" is a reference many. Expected record data type of array, "%s" found on model "%s" for identifier "%s"', $key, gettype($data[$key]), $type, $identifier));
-            }
-            $references = $relMeta->isOne() ? [$data[$key]] : $data[$key];
-
-            $extracted = [];
-            foreach ($references as $reference) {
-                $extracted[] =  $this->extractRelationship($relMeta, $reference);
-            }
-            $data[$key] = $relMeta->isOne() ? reset($extracted) : $extracted;
+        if (empty($update)) {
+            return $model;
         }
-        return new Record($type, $identifier, $data);
+
+        $this->getQuery()->executeUpdate($metadata, $model->getStore(), $criteria, $update);
+        return $model;
     }
 
     /**
-     * Extracts a standard relationship array that the store expects from a raw MongoDB reference value.
+     * Appends the change set values to a database object based on the provided handler.
      *
-     * @param   RelationshipMetadata    $relMeta
-     * @param   mixed                   $reference
-     * @return  array
-     * @throws  \RuntimeException   If the relationship could not be extracted.
-     */
-    protected function extractRelationship(RelationshipMetadata $relMeta, $reference)
-    {
-        $simple = false === $relMeta->isPolymorphic();
-        $idKey = $this->getIdentifierKey();
-        $typeKey = $this->getPolymorphicKey();
-        if (true === $simple && is_array($reference) && isset($reference[$idKey])) {
-            return [
-                'id'    => $reference[$idKey],
-                'type'  => $relMeta->getEntityType(),
-            ];
-        } elseif (true === $simple && !is_array($reference)) {
-            return [
-                'id'    => $reference,
-                'type'  => $relMeta->getEntityType(),
-            ];
-        } elseif (false === $simple && is_array($reference) && isset($reference[$idKey]) && isset($reference[$typeKey])) {
-            return [
-                'id'    => $reference[$idKey],
-                'type'  => $reference[$typeKey],
-            ];
-        } else {
-            throw new RuntimeException('Unable to extract a reference id.');
-        }
-    }
-
-    /**
-     * Gets standard database retrieval criteria for an inverse relationship.
-     *
-     * @param   EntityMetadata  $metadata       The entity to retrieve database records for.
-     * @param   string|array    $identifiers    The IDs to query.
+     * @param   Model   $model
+     * @param   array   $obj
+     * @param   Closure $handler
      * @return  array
      */
-    protected function getInverseCriteria(EntityMetadata $owner, EntityMetadata $related, $identifiers, $inverseField)
+    private function appendChangeSet(Model $model, array $obj, Closure $handler)
     {
-        $criteria[$inverseField] = $this->getIdentifierCriteria($identifiers);
-        if (true === $owner->isChildEntity()) {
-            // The owner is owned by a polymorphic model. Must include the type with the inverse field criteria.
-            $criteria[$inverseField] = [
-                $this->getIdentifierKey()   => $criteria[$inverseField],
-                $this->getPolymorphicKey()  => $owner->type,
-            ];
+        $metadata = $model->getMetadata();
+        $changeset = $model->getChangeSet();
+        $formatter = $this->getFormatter();
+
+        foreach ($this->changeSetMethods as $setKey => $methods) {
+            list($metaMethod, $formatMethod) = $methods;
+            foreach ($changeset[$setKey] as $key => $values) {
+                $value = $formatter->$formatMethod($metadata->$metaMethod($key), $values['new']);
+                $obj = $handler($key, $value, $obj);
+            }
         }
-        if (true === $related->isChildEntity()) {
-            // The relationship is owned by a polymorphic model. Must include the type in the root criteria.
-            $criteria[$this->getPolymorphicKey()] = $related->type;
-        }
-        return $criteria;
+        return $obj;
     }
 
     /**
-     * Gets standard database retrieval criteria for an entity and the provided identifiers.
+     * Creates the database insert object for a Model.
      *
-     * @param   EntityMetadata  $metadata       The entity to retrieve database records for.
-     * @param   string|array    $identifiers    The IDs to query.
+     * @param   Model   $model
      * @return  array
      */
-    protected function getRetrieveCritiera(EntityMetadata $metadata, $identifiers)
+    private function createInsertObj(Model $model)
     {
-        $idKey = $this->getIdentifierKey();
-        $criteria[$idKey] = $this->getIdentifierCriteria($identifiers);
-        if (empty($criteria[$idKey])) {
-            unset($criteria[$idKey]);
-        }
+        $metadata = $model->getMetadata();
+        $insert = [
+            $this->getIdentifierKey()   => $this->convertId($model->getId()),
+        ];
         if (true === $metadata->isChildEntity()) {
-            $criteria[$this->getPolymorphicKey()] = $metadata->type;
+            $insert[$this->getPolymorphicKey()] = $metadata->type;
         }
-        return $criteria;
+        return $this->appendChangeSet($model, $insert, $this->getCreateChangeSetHandler());
     }
 
     /**
-     * Creates/formats the MongoDB identifier critiera based on a provided set of ids.
+     * Creates the database update object for a Model.
      *
-     * @param   string|array    $identifiers
+     * @param   Model   $model
      * @return  array
      */
-    protected function getIdentifierCriteria($identifiers)
+    private function createUpdateObj(Model $model)
     {
-        $criteria = [];
-        if (is_array($identifiers)) {
-            $ids = [];
-            foreach ($identifiers as $id) {
-                $ids[] = $this->convertId($id);
+        return $this->appendChangeSet($model, [], $this->getUpdateChangeSetHandler());
+    }
+
+    /**
+     * Gets the change set handler Closure for create.
+     *
+     * @return  Closure
+     */
+    private function getCreateChangeSetHandler()
+    {
+        return function ($key, $value, $obj) {
+            if (null !== $value) {
+                $obj[$key] = $value;
             }
-            if (1 === count($ids)) {
-                $criteria = $ids[0];
-            } elseif (!empty($ids)) {
-                $criteria = ['$in' => $ids];
+            return $obj;
+        };
+    }
+
+    /**
+     * Gets the change set handler Closure for update.
+     *
+     * @return  Closure
+     */
+    private function getUpdateChangeSetHandler()
+    {
+        return function ($key, $value, $obj) {
+            $op = '$set';
+            if (null === $value) {
+                $op = '$unset';
+                $value = 1;
             }
-        } else {
-            $criteria = $this->convertId($identifiers);
-        }
-        return $criteria;
-    }
-
-    /**
-     * Creates a builder object for querying MongoDB based on the provided metadata.
-     *
-     * @param   EntityMetadata  $metadata
-     * @return  \Doctrine\MongoDB\Query\Builder
-     */
-    protected function createQueryBuilder(EntityMetadata $metadata)
-    {
-        return $this->getModelCollection($metadata)->createQueryBuilder();
-    }
-
-    /**
-     * Gets the MongoDB Collection object for a Model.
-     *
-     * @param   EntityMetadata  $metadata
-     * @return  \Doctrine\MongoDB\Collection
-     */
-    protected function getModelCollection(EntityMetadata $metadata)
-    {
-        return $this->connection->selectCollection($metadata->persistence->db, $metadata->persistence->collection);
-    }
-
-    /**
-     * Determines if the current id strategy is supported.
-     *
-     * @param   string|null     $strategy
-     * @return  bool
-     */
-    protected function isIdStrategySupported($strategy)
-    {
-        return (null === $strategy || 'object' === $strategy);
+            $obj[$op][$key] = $value;
+            return $obj;
+        };
     }
 }

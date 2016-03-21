@@ -31,7 +31,11 @@ class PersisterTest extends PHPUnit_Framework_TestCase
 
         $entityUtil = new Modlr\Util\EntityUtility($config, $typeFactory);
         $this->smf = new Modlr\Persister\MongoDb\StorageMetadataFactory($entityUtil);
-        $this->persister = new Modlr\Persister\MongoDb\Persister($this->connection, $this->smf);
+
+        $formatter = new Modlr\Persister\MongoDb\Formatter();
+        $query = new Modlr\Persister\MongoDb\Query($this->connection, $formatter);
+
+        $this->persister = new Modlr\Persister\MongoDb\Persister($query, $this->smf);
     }
 
     public function tearDown()
