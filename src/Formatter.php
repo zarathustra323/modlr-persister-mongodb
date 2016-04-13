@@ -426,6 +426,10 @@ final class Formatter
     private function getQueryAttrConverter(Store $store, AttributeMetadata $attrMeta)
     {
         return function ($value) use ($store, $attrMeta) {
+            if (in_array($attrMeta->dataType, ['object', 'array'])) {
+                // Leave the value as is.
+                return $value;
+            }
             $value = $store->convertAttributeValue($attrMeta->dataType, $value);
             return $this->getAttributeDbValue($attrMeta, $value);
         };
