@@ -21,7 +21,7 @@
     },
     "require": {
         "php": ">=5.4",
-        "as3/modlr": ">=0.2.3 <1.0",
+        "as3/modlr": ">=0.3.0 <1.0",
         "doctrine/mongodb": "^1.2"
     }
 }
