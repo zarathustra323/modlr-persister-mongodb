@@ -88,7 +88,7 @@ final class Formatter
         }
         if ('object' === $attrMeta->dataType) {
             $array = (array) $value;
-            return empty($array) ? null : $value
+            return empty($array) ? null : $value;
         }
         return $value;
     }
