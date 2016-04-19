@@ -30,6 +30,8 @@ final class Persister implements PersisterInterface
         'attributes'    => ['getAttribute', 'getAttributeDbValue'],
         'hasOne'        => ['getRelationship', 'getHasOneDbValue'],
         'hasMany'       => ['getRelationship', 'getHasManyDbValue'],
+        'embedOne'      => ['getEmbed', 'getEmbedOneDbValue'],
+        'embedMany'     => ['getEmbed', 'getEmbedManyDbValue'],
     ];
 
     /**
