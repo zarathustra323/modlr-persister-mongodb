@@ -97,7 +97,7 @@ final class Formatter
      * Prepares and formats a has-many embed for proper insertion into the database.
      *
      * @param   EmbeddedPropMetadata    $embeddedPropMeta
-     * @param   array                   $embed
+     * @param   array|null              $embeds
      * @return  mixed
      */
     public function getEmbedManyDbValue(EmbeddedPropMetadata $embeddedPropMeta, array $embeds = null)
