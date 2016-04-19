@@ -83,6 +83,13 @@ final class Formatter
         if ('date' === $attrMeta->dataType && $value instanceof \DateTime) {
             return new \MongoDate($value->getTimestamp(), $value->format('u'));
         }
+        if ('array' === $attrMeta->dataType && empty($value)) {
+            return;
+        }
+        if ('object' === $attrMeta->dataType) {
+            $array = (array) $value;
+            return empty($array) ? null : $value
+        }
         return $value;
     }
 
