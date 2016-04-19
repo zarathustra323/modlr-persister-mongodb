@@ -5,8 +5,10 @@ namespace As3\Modlr\Persister\MongoDb;
 use \Closure;
 use \MongoId;
 use As3\Modlr\Metadata\AttributeMetadata;
+use As3\Modlr\Metadata\EmbeddedPropMetadata;
 use As3\Modlr\Metadata\EntityMetadata;
 use As3\Modlr\Metadata\RelationshipMetadata;
+use As3\Modlr\Models\Embed;
 use As3\Modlr\Models\Model;
 use As3\Modlr\Persister\PersisterException;
 use As3\Modlr\Store\Store;
@@ -14,7 +16,7 @@ use As3\Modlr\Store\Store;
 /**
  * Handles persistence formatting operations for MongoDB.
  * - Formats query criteria to proper keys and values.
- * - Formats attribute and relationships values for insertion to the db.
+ * - Formats attribute, relationship, and embed values for insertion to the db.
  * - Formats identifier values for insertion to the db.
  *
  * @author Jacob Bare <jacob.bare@gmail.com>
@@ -81,7 +83,48 @@ final class Formatter
         if ('date' === $attrMeta->dataType && $value instanceof \DateTime) {
             return new \MongoDate($value->getTimestamp(), $value->format('u'));
         }
+        if ('array' === $attrMeta->dataType && empty($value)) {
+            return;
+        }
+        if ('object' === $attrMeta->dataType) {
+            $array = (array) $value;
+            return empty($array) ? null : $value;
+        }
         return $value;
+    }
+
+    /**
+     * Prepares and formats a has-many embed for proper insertion into the database.
+     *
+     * @param   EmbeddedPropMetadata    $embeddedPropMeta
+     * @param   array|null              $embeds
+     * @return  mixed
+     */
+    public function getEmbedManyDbValue(EmbeddedPropMetadata $embeddedPropMeta, array $embeds = null)
+    {
+        if (null === $embeds) {
+            return;
+        }
+        $created = [];
+        foreach ($embeds as $embed) {
+            $created[] = $this->createEmbed($embeddedPropMeta, $embed);
+        }
+        return empty($created) ? null : $created;
+    }
+
+    /**
+     * Prepares and formats a has-one embed for proper insertion into the database.
+     *
+     * @param   EmbeddedPropMetadata    $embeddedPropMeta
+     * @param   Embed|null              $embed
+     * @return  mixed
+     */
+    public function getEmbedOneDbValue(EmbeddedPropMetadata $embeddedPropMeta, Embed $embed = null)
+    {
+        if (null === $embed) {
+            return;
+        }
+        return $this->createEmbed($embeddedPropMeta, $embed);
     }
 
     /**
@@ -94,7 +137,7 @@ final class Formatter
     public function getHasOneDbValue(RelationshipMetadata $relMeta, Model $model = null)
     {
         if (null === $model || true === $relMeta->isInverse) {
-            return null;
+            return;
         }
         return $this->createReference($relMeta, $model);
     }
@@ -185,6 +228,35 @@ final class Formatter
     public function isTypeField($key)
     {
         return in_array($key, $this->getTypeFields());
+    }
+
+    /**
+     * Creates an embed for storage of an embed model in the database
+     *
+     * @param   EmbeddedPropMetadata    $embeddedPropMeta
+     * @param   Embed                   $embed
+     * @return  array|null
+     */
+    private function createEmbed(EmbeddedPropMetadata $embeddedPropMeta, Embed $embed)
+    {
+        $embedMeta = $embeddedPropMeta->embedMeta;
+
+        $obj = [];
+        foreach ($embedMeta->getAttributes() as $key => $attrMeta) {
+            $value = $this->getAttributeDbValue($attrMeta, $embed->get($key));
+            if (null === $value) {
+                continue;
+            }
+            $obj[$key] = $value;
+        }
+        foreach ($embedMeta->getEmbeds() as $key => $propMeta) {
+            $value = (true === $propMeta->isOne()) ? $this->getEmbedOneDbValue($propMeta, $embed->get($key)) : $this->getEmbedManyDbValue($propMeta, $embed->get($key));
+            if (null === $value) {
+                continue;
+            }
+            $obj[$key] = $value;
+        }
+        return $obj;
     }
 
     /**
