@@ -197,7 +197,7 @@ final class Persister implements PersisterInterface
      */
     public function query(EntityMetadata $metadata, Store $store, array $criteria, array $fields = [], array $sort = [], $offset = 0, $limit = 0)
     {
-        $cursor = $this->getQuery()->executeFind($metadata, $store, $criteria);
+        $cursor = $this->getQuery()->executeFind($metadata, $store, $criteria)->sort($sort);
         return $this->getHydrator()->hydrateMany($metadata, $cursor->toArray(), $store);
     }
 
