@@ -5,69 +5,69 @@ namespace As3\Modlr\Persister\MongoDb;
 use As3\Modlr\Metadata\EntityMetadata;
 use As3\Modlr\Metadata\RelationshipMetadata;
 use As3\Modlr\Persister\PersisterException;
-use As3\Modlr\Persister\Record;
 use As3\Modlr\Store\Store;
+use Doctrine\MongoDB\Cursor;
 
 /**
- * Hydrates raw, MongoDB array results into Record instances.
+ * Hydrates raw, MongoDB array results into RecordSet instances.
  *
  * @author Jacob Bare <jacob.bare@gmail.com>
  */
 final class Hydrator
 {
     /**
-     * Extracts the model type from a raw MongoDB result.
+     * Creates a cursor record set object from a MongoDB cursor.
      *
      * @param   EntityMetadata  $metadata
-     * @param   array           $data
+     * @param   Cursor          $cursor
+     * @param   Store           $store
+     * @return  CursorRecordSet
+     */
+    public function createCursorRecordSet(EntityMetadata $metadata, Cursor $cursor, Store $store)
+    {
+        return new CursorRecordSet($metadata, $cursor, $store, $this);
+    }
+
+    /**
+     * Extracts the model type from a raw MongoDB record.
+     *
+     * @param   EntityMetadata  $metadata
+     * @param   array           $record
      * @return  string
      * @throws  PersisterException
      */
-    public function extractType(EntityMetadata $metadata, array $data)
+    public function extractType(EntityMetadata $metadata, array $record)
     {
         if (false === $metadata->isPolymorphic()) {
             return $metadata->type;
         }
-        return $this->extractField(Persister::POLYMORPHIC_KEY, $data);
+        return $this->extractField(Persister::POLYMORPHIC_KEY, $record);
     }
 
     /**
-     * Processes a raw MongoDB result and converts it into a standardized Record object.
+     * Processes a raw MongoDB record and normalizes it into a standard array.
      *
      * @param   EntityMetadata  $metadata
-     * @param   array           $data
+     * @param   array           $record
      * @param   Store           $store
-     * @return  Record
+     * @return  array
      */
-    public function hydrateOne(EntityMetadata $metadata, array $data, Store $store)
+    public function normalize(EntityMetadata $metadata, array $record, Store $store)
     {
-        // Get the identifier and model type value from the raw result.
-        list($identifier, $type) = $this->extractIdAndType($metadata, $data);
+        // Get the identifier and model type value from the raw record.
+        list($identifier, $type) = $this->extractIdAndType($metadata, $record);
 
         // Reload the metadata in case a polymorphic type was found.
         $metadata = $store->getMetadataForType($type);
 
         // Convert relationships to the proper format.
-        $data = $this->convertRelationships($metadata, $data);
+        $record = $this->convertRelationships($metadata, $record);
 
-        return new Record($type, $identifier, $data);
-    }
-
-    /**
-     * Processes multiple, raw MongoDB results and converts them into an array of standardized Record objects.
-     *
-     * @param   EntityMetadata  $metadata
-     * @param   array           $results
-     * @param   Store           $store
-     * @return  Record[]
-     */
-    public function hydrateMany(EntityMetadata $metadata, array $results, Store $store)
-    {
-        $records = [];
-        foreach ($results as $data) {
-            $records[] = $this->hydrateOne($metadata, $data, $store);
-        }
-        return $records;
+        return [
+            'identifier'    => (String) $identifier,
+            'type'          => $type,
+            'properties'    => $record,
+        ];
     }
 
     /**

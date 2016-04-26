@@ -58,22 +58,23 @@ final class Persister implements PersisterInterface
      *
      * @param   Query                   $query
      * @param   StorageMetadataFactory  $smf
+     * @param   Hydrator                $hydrator
      */
-    public function __construct(Query $query, StorageMetadataFactory $smf)
+    public function __construct(Query $query, StorageMetadataFactory $smf, Hydrator $hydrator)
     {
-        $this->hydrator = new Hydrator();
         $this->smf = $smf;
         $this->query = $query;
+        $this->hydrator = $hydrator;
     }
 
     /**
      * {@inheritDoc}
      */
-    public function all(EntityMetadata $metadata, Store $store, array $identifiers = [])
+    public function all(EntityMetadata $metadata, Store $store, array $identifiers = [], array $fields = [], array $sort = [], $offset = 0, $limit = 0)
     {
         $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $identifiers);
-        $cursor = $this->getQuery()->executeFind($metadata, $store, $criteria);
-        return $this->getHydrator()->hydrateMany($metadata, $cursor->toArray(), $store);
+        $cursor = $this->getQuery()->executeFind($metadata, $store, $criteria, $fields, $sort, $offset, $limit);
+        return $this->getHydrator()->createCursorRecordSet($metadata, $cursor, $store);
     }
 
     /**
@@ -189,7 +190,7 @@ final class Persister implements PersisterInterface
     {
         $criteria = $this->getQuery()->getInverseCriteria($owner, $rel, $identifiers, $inverseField);
         $cursor = $this->getQuery()->executeFind($rel, $store, $criteria);
-        return $this->getHydrator()->hydrateMany($rel, $cursor->toArray(), $store);
+        return $this->getHydrator()->createCursorRecordSet($rel, $cursor, $store);
     }
 
     /**
@@ -197,8 +198,8 @@ final class Persister implements PersisterInterface
      */
     public function query(EntityMetadata $metadata, Store $store, array $criteria, array $fields = [], array $sort = [], $offset = 0, $limit = 0)
     {
-        $cursor = $this->getQuery()->executeFind($metadata, $store, $criteria)->sort($sort);
-        return $this->getHydrator()->hydrateMany($metadata, $cursor->toArray(), $store);
+        $cursor = $this->getQuery()->executeFind($metadata, $store, $criteria, $fields, $sort, $offset, $limit);
+        return $this->getHydrator()->createCursorRecordSet($metadata, $cursor, $store);
     }
 
     /**
@@ -207,11 +208,8 @@ final class Persister implements PersisterInterface
     public function retrieve(EntityMetadata $metadata, $identifier, Store $store)
     {
         $criteria = $this->getQuery()->getRetrieveCritiera($metadata, $identifier);
-        $result = $this->getQuery()->executeFind($metadata, $store, $criteria)->getSingleResult();
-        if (null === $result) {
-            return;
-        }
-        return $this->getHydrator()->hydrateOne($metadata, $result, $store);
+        $cursor = $this->getQuery()->executeFind($metadata, $store, $criteria);
+        return $this->getHydrator()->createCursorRecordSet($metadata, $cursor, $store);
     }
 
     /**
