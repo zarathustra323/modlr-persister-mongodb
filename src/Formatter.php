@@ -460,6 +460,11 @@ final class Formatter
     {
         foreach ($expression as $key => $value) {
 
+            if ('$regex' === $key && !$value instanceof \MongoRegex) {
+                $expression[$key] = new \MongoRegex($value);
+                continue;
+            }
+
             if (true === $this->isOpType('ignore', $key)) {
                 continue;
             }
