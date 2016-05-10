@@ -92,6 +92,7 @@ final class Query
             ->setQueryArray($criteria)
         ;
 
+        $this->appendSearch($builder, $criteria);
         $this->appendFields($builder, $fields);
         $this->appendSort($builder, $sort);
         $this->appendLimitAndOffset($builder, $limit, $offset);
@@ -250,6 +251,23 @@ final class Query
     }
 
     /**
+     * Appends text search score and sorting to a Query Builder.
+     *
+     * @param   QueryBuilder    $builder
+     * @param   array           $criteria
+     * @return  self
+     */
+    private function appendSearch(QueryBuilder $builder, array $criteria)
+    {
+        if (false === $this->isSearchQuery($criteria)) {
+            return $this;
+        }
+        $builder->selectMeta('searchScore', 'textScore');
+        $builder->sortMeta('searchScore', 'textScore');
+        return $this;
+    }
+
+    /**
      * Appends sorting criteria to a Query Builder.
      *
      * @param   QueryBuilder    $builder
@@ -262,6 +280,25 @@ final class Query
             $builder->sort($sort);
         }
         return $this;
+    }
+
+    /**
+     * Determines if the provided query criteria contains text search.
+     *
+     * @param   array   $criteria
+     * @return  bool
+     */
+    private function isSearchQuery(array $criteria)
+    {
+        if (isset($criteria['$text'])) {
+            return true;
+        }
+        foreach ($criteria as $key => $value) {
+            if (is_array($value) && true === $this->isSearchQuery($value)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
