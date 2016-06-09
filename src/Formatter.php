@@ -326,11 +326,14 @@ final class Formatter
      */
     private function formatQueryElementAttr($key, $value, EntityMetadata $metadata, Store $store)
     {
-        if (null === $attrMeta = $metadata->getAttribute($key)) {
+        if (null === $propMeta = $metadata->getProperty($key)) {
+            return;
+        }
+        if (false === $propMeta->isAttribute()) {
             return;
         }
 
-        $converter = $this->getQueryAttrConverter($store, $attrMeta);
+        $converter = $this->getQueryAttrConverter($store, $propMeta);
 
         if (is_array($value)) {
 
@@ -338,7 +341,7 @@ final class Formatter
                 return [$key, $this->formatQueryExpression($value, $converter)];
             }
 
-            if (in_array($attrMeta->dataType, ['array', 'object'])) {
+            if (in_array($propMeta->dataType, ['array', 'object'])) {
                 return [$key, $value];
             }
             return [$key, $this->formatQueryExpression(['$in' => $value], $converter)];
@@ -404,13 +407,16 @@ final class Formatter
      */
     private function formatQueryElementRel($key, $value, EntityMetadata $metadata, Store $store)
     {
-        if (null === $relMeta = $metadata->getRelationship($key)) {
+        if (null === $propMeta = $metadata->getProperty($key)) {
+            return;
+        }
+        if (false === $propMeta->isRelationship()) {
             return;
         }
 
-        $converter = $this->getQueryRelConverter($store, $relMeta);
+        $converter = $this->getQueryRelConverter($store, $propMeta);
 
-        if (true === $relMeta->isPolymorphic()) {
+        if (true === $propMeta->isPolymorphic()) {
             $key = sprintf('%s.%s', $key, Persister::IDENTIFIER_KEY);
         }
 
