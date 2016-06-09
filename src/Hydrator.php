@@ -3,7 +3,7 @@
 namespace As3\Modlr\Persister\MongoDb;
 
 use As3\Modlr\Metadata\EntityMetadata;
-use As3\Modlr\Metadata\RelationshipMetadata;
+use As3\Modlr\Metadata\Properties\RelationshipMetadata;
 use As3\Modlr\Persister\PersisterException;
 use As3\Modlr\Store\Store;
 use Doctrine\MongoDB\Cursor;

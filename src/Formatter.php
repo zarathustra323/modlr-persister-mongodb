@@ -4,10 +4,10 @@ namespace As3\Modlr\Persister\MongoDb;
 
 use \Closure;
 use \MongoId;
-use As3\Modlr\Metadata\AttributeMetadata;
-use As3\Modlr\Metadata\EmbeddedPropMetadata;
 use As3\Modlr\Metadata\EntityMetadata;
-use As3\Modlr\Metadata\RelationshipMetadata;
+use As3\Modlr\Metadata\Properties\AttributeMetadata;
+use As3\Modlr\Metadata\Properties\EmbeddedMetadata;
+use As3\Modlr\Metadata\Properties\RelationshipMetadata;
 use As3\Modlr\Models\Embed;
 use As3\Modlr\Models\Model;
 use As3\Modlr\Persister\PersisterException;
@@ -96,11 +96,11 @@ final class Formatter
     /**
      * Prepares and formats a has-many embed for proper insertion into the database.
      *
-     * @param   EmbeddedPropMetadata    $embeddedPropMeta
-     * @param   array|null              $embeds
+     * @param   EmbeddedMetadata    $embeddedPropMeta
+     * @param   array|null          $embeds
      * @return  mixed
      */
-    public function getEmbedManyDbValue(EmbeddedPropMetadata $embeddedPropMeta, array $embeds = null)
+    public function getEmbedManyDbValue(EmbeddedMetadata $embeddedPropMeta, array $embeds = null)
     {
         if (null === $embeds) {
             return;
@@ -115,11 +115,11 @@ final class Formatter
     /**
      * Prepares and formats a has-one embed for proper insertion into the database.
      *
-     * @param   EmbeddedPropMetadata    $embeddedPropMeta
-     * @param   Embed|null              $embed
+     * @param   EmbeddedMetadata    $embeddedPropMeta
+     * @param   Embed|null          $embed
      * @return  mixed
      */
-    public function getEmbedOneDbValue(EmbeddedPropMetadata $embeddedPropMeta, Embed $embed = null)
+    public function getEmbedOneDbValue(EmbeddedMetadata $embeddedPropMeta, Embed $embed = null)
     {
         if (null === $embed) {
             return;
@@ -233,11 +233,11 @@ final class Formatter
     /**
      * Creates an embed for storage of an embed model in the database
      *
-     * @param   EmbeddedPropMetadata    $embeddedPropMeta
-     * @param   Embed                   $embed
+     * @param   EmbeddedMetadata    $embeddedPropMeta
+     * @param   Embed               $embed
      * @return  array|null
      */
-    private function createEmbed(EmbeddedPropMetadata $embeddedPropMeta, Embed $embed)
+    private function createEmbed(EmbeddedMetadata $embeddedPropMeta, Embed $embed)
     {
         $embedMeta = $embeddedPropMeta->embedMeta;
 
