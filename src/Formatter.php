@@ -271,8 +271,8 @@ final class Formatter
         $reference = [];
         $identifier = $this->getIdentifierDbValue($model->getId());
         if (true === $relMeta->isPolymorphic()) {
-            $reference[Persister::IDENTIFIER_KEY] = $identifier;
-            $reference[Persister::TYPE_KEY] = $model->getType();
+            $reference[Persister::IDENTIFIER_KEY]  = $identifier;
+            $reference[Persister::POLYMORPHIC_KEY] = $model->getType();
             return $reference;
         }
         return $identifier;
