@@ -96,15 +96,19 @@ final class Formatter
     /**
      * Prepares and formats a has-many embed for proper insertion into the database.
      *
-     * @param   EmbeddedPropMetadata    $embeddedPropMeta
-     * @param   array|null              $embeds
+     * @param   EmbeddedPropMetadata        $embeddedPropMeta
+     * @param   EmbedCollection|array|null  $embeds
      * @return  mixed
      */
-    public function getEmbedManyDbValue(EmbeddedPropMetadata $embeddedPropMeta, array $embeds = null)
+    public function getEmbedManyDbValue(EmbeddedPropMetadata $embeddedPropMeta, $embeds = null)
     {
         if (null === $embeds) {
             return;
         }
+        if (!is_array($embeds) && !$embeds instanceof \Traversable) {
+            throw new \InvalidArgumentException('Unable to traverse the embed collection');
+        }
+
         $created = [];
         foreach ($embeds as $embed) {
             $created[] = $this->createEmbed($embeddedPropMeta, $embed);
