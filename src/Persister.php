@@ -42,6 +42,11 @@ final class Persister implements PersisterInterface
     private $hydrator;
 
     /**
+     * @var SchemaManager
+     */
+    private $schemaManager;
+
+    /**
      * @var StorageMetadataFactory
      */
     private $smf;
@@ -60,11 +65,12 @@ final class Persister implements PersisterInterface
      * @param   StorageMetadataFactory  $smf
      * @param   Hydrator                $hydrator
      */
-    public function __construct(Query $query, StorageMetadataFactory $smf, Hydrator $hydrator)
+    public function __construct(Query $query, StorageMetadataFactory $smf, Hydrator $hydrator, SchemaManager $schemaManager)
     {
         $this->smf = $smf;
         $this->query = $query;
         $this->hydrator = $hydrator;
+        $this->schemaManager = $schemaManager;
     }
 
     /**
@@ -95,6 +101,32 @@ final class Persister implements PersisterInterface
         $insert = $this->createInsertObj($model);
         $this->getQuery()->executeInsert($metadata, $insert);
         return $model;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function createSchemata(EntityMetadata $metadata)
+    {
+        if (!$metadata->persistence instanceof StorageMetadata) {
+            throw PersisterException::badRequest('Wrong StorageMetadata type');
+        }
+        $collection = $this->getQuery()->getModelCollection($metadata);
+        $schemata = $metadata->persistence->schemata ?: [];
+        return $this->schemaManager->createSchemata($collection, $schemata);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function syncSchemata(EntityMetadata $metadata)
+    {
+        if (!$metadata->persistence instanceof StorageMetadata) {
+            throw PersisterException::badRequest('Wrong StorageMetadata type');
+        }
+        $collection = $this->getQuery()->getModelCollection($metadata);
+        $schemata = $metadata->persistence->schemata ?: [];
+        return $this->schemaManager->syncSchemata($collection);
     }
 
     /**
