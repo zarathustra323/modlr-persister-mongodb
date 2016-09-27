@@ -44,6 +44,10 @@ final class StorageMetadataFactory implements StorageMetadataFactoryInterface
         if (isset($mapping['collection'])) {
             $persistence->collection = $mapping['collection'];
         }
+
+        if (isset($mapping['schemata'])) {
+            $persistence->schemata = $this->rksort($mapping['schemata']);
+        }
         return $persistence;
     }
 
@@ -65,9 +69,24 @@ final class StorageMetadataFactory implements StorageMetadataFactoryInterface
         $this->validateIdStrategy($metadata);
         $this->validateDatabase($metadata);
         $this->validateCollectionNaming($metadata);
+        $this->validateSchemata($metadata);
     }
 
-
+    /**
+     * Recursively ksorts an array
+     * @param   array
+     * @return  array
+     */
+    private function rksort(array $array)
+    {
+        ksort($array);
+        foreach ($array as $k => $v) {
+            if (is_array($v)) {
+                $array[$k] = $this->rksort($v);
+            }
+        }
+        return $array;
+    }
 
     /**
      * Validates that the collection naming is correct, based on entity format config.
@@ -115,6 +134,23 @@ final class StorageMetadataFactory implements StorageMetadataFactoryInterface
         $validIdStrategies = ['object'];
         if (!in_array($persistence->idStrategy, $validIdStrategies)) {
             throw MetadataException::invalidMetadata($metadata->type, sprintf('The persistence id strategy "%s" is invalid. Valid types are "%s"', $persistence->idStrategy, implode('", "', $validIdStrategies)));
+        }
+    }
+
+    /**
+     * Validates the schema definitions
+     *
+     * @param   EntityMetadata  $metadata
+     * @throws  MetadataException
+     */
+    private function validateSchemata(EntityMetadata $metadata)
+    {
+        $persistence = $metadata->persistence;
+        foreach ($persistence->schemata as $k => $schema) {
+            if (empty($schema['keys'])) {
+                throw MetadataException::invalidMetadata($metadata->type, 'At least one key must be specified to define an index.');
+            }
+            $persistence->schemata[$k]['name'] = sprintf('modlr_%s', md5(json_encode($schema)));
         }
     }
 }
