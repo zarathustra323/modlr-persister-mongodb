@@ -150,7 +150,7 @@ final class StorageMetadataFactory implements StorageMetadataFactoryInterface
             if (empty($schema['keys'])) {
                 throw MetadataException::invalidMetadata($metadata->type, 'At least one key must be specified to define an index.');
             }
-            $persistence->schemata[$k]['name'] = sprintf('modlr_%s', md5(json_encode($schema)));
+            $persistence->schemata[$k]['options']['name'] = sprintf('modlr_%s', md5(json_encode($schema)));
         }
     }
 }
