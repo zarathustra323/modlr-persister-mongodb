@@ -36,8 +36,9 @@ class PersisterTest extends PHPUnit_Framework_TestCase
         $query = new Modlr\Persister\MongoDb\Query($this->connection, $formatter);
 
         $hydrator = new Modlr\Persister\MongoDb\Hydrator();
+        $schemaManager = new Modlr\Persister\MongoDb\SchemaManager();
 
-        $this->persister = new Modlr\Persister\MongoDb\Persister($query, $this->smf, $hydrator);
+        $this->persister = new Modlr\Persister\MongoDb\Persister($query, $this->smf, $hydrator, $schemaManager);
     }
 
     public function tearDown()
@@ -117,5 +118,72 @@ class PersisterTest extends PHPUnit_Framework_TestCase
     {
         $val = $this->persister->generateId('incrementId');
         $this->assertGreaterThan($val, $this->persister->generateId('incrementId'));
+    }
+
+    public function testNameIsAppendedToSchemata()
+    {
+        $metadata = $this->getMetadata()->persistence;
+
+        foreach ($metadata->schemata as $schema) {
+            $this->assertTrue(array_key_exists('name', $schema['options']), 'index name was not applied to schema');
+            $this->assertTrue(!empty($schema['options']['name']), 'index name was not properly generated for schema');
+            $this->assertSame(stripos($schema['options']['name'], 'modlr_'), 0, '`modlr_` prefix missing from schema name');
+        }
+    }
+
+    /**
+     * @expectedException           As3\Modlr\Exception\MetadataException
+     * @expectedExceptionMessage    At least one key must be specified to define an index.
+     */
+    public function testSchemaRequiresAtLeastOneKey()
+    {
+        $schemata = [['options' => ['unique' => true]]];
+        $metadata = $this->getMetadata($schemata);
+    }
+
+    public function testSchemaCreation()
+    {
+        $metadata = $this->getMetadata();
+        $this->persister->createSchemata($metadata);
+
+        $collection = $this->connection->selectCollection(self::$dbName, 'test-model');
+        $indices = $collection->getIndexInfo();
+
+        foreach ($metadata->persistence->schemata as $schema) {
+            $found = false;
+            foreach ($indices as $index) {
+                if ($index['name'] === $schema['options']['name']) {
+                    $found = true;
+                }
+            }
+            $this->assertTrue($found, sprintf('Index for "%s" was not created!', $schema['options']['name']));
+        }
+    }
+
+    private function getMetadata(array $schemata = [])
+    {
+        $mapping = [
+            'type'          => 'test-model',
+            'attributes'    => [
+                'name'          => ['data_type' => 'string'],
+                'active'        => ['data_type' => 'boolean']
+            ],
+            'persistence'   => [
+                'db'            => self::$dbName,
+                'collection'    => 'test-model',
+                'schemata'      => [
+                    ['keys' => ['name' => 1]],
+                    ['keys' => ['active' => 1], ['options' => ['unique' => true]]]
+                ]
+            ]
+        ];
+        if (!empty($schemata)) {
+            $mapping['persistence']['schemata'] = $schemata;
+        }
+        $metadata = new Modlr\Metadata\EntityMetadata($mapping['type']);
+        $pmd = $this->smf->createInstance($mapping['persistence']);
+        $metadata->setPersistence($pmd);
+        $this->smf->handleValidate($metadata);
+        return $metadata;
     }
 }
