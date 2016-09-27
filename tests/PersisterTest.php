@@ -125,8 +125,7 @@ class PersisterTest extends PHPUnit_Framework_TestCase
         $metadata = $this->getMetadata()->persistence;
 
         foreach ($metadata->schemata as $schema) {
-            $this->assertTrue(array_key_exists('name', $schema['options']), 'index name was not applied to schema');
-            $this->assertTrue(!empty($schema['options']['name']), 'index name was not properly generated for schema');
+            $this->assertTrue(isset($schema['options']['name']) && !empty($schema['options']['name']), 'index name was not applied to schema');
             $this->assertSame(stripos($schema['options']['name'], 'modlr_'), 0, '`modlr_` prefix missing from schema name');
         }
     }
@@ -135,10 +134,52 @@ class PersisterTest extends PHPUnit_Framework_TestCase
      * @expectedException           As3\Modlr\Exception\MetadataException
      * @expectedExceptionMessage    At least one key must be specified to define an index.
      */
-    public function testSchemaRequiresAtLeastOneKey()
+    public function testSchemaRequiresKeys()
     {
         $schemata = [['options' => ['unique' => true]]];
         $metadata = $this->getMetadata($schemata);
+    }
+
+    /**
+     * @expectedException           As3\Modlr\Exception\MetadataException
+     * @expectedExceptionMessage    At least one key must be specified to define an index.
+     */
+    public function testSchemaRequiresAtLeastOneKey()
+    {
+        $schemata = ['keys' => [], ['options' => ['unique' => true]]];
+        $metadata = $this->getMetadata($schemata);
+    }
+
+    /**
+     * @expectedException           InvalidArgumentException
+     * @expectedExceptionMessage    Cannot create an index with no keys defined.
+     */
+    public function testSchemaCreateRequiresKeys()
+    {
+        $collection = $this->connection->selectCollection(self::$dbName, 'test-model');
+        $manager = new Modlr\Persister\MongoDb\SchemaManager;
+
+        $schemata = [
+            ['options' => ['unique' => true]]
+        ];
+
+        $manager->createSchemata($collection, $schemata);
+    }
+
+    /**
+     * @expectedException           InvalidArgumentException
+     * @expectedExceptionMessage    Cannot create an index with no keys defined.
+     */
+    public function testSchemaCreateRequiresAtLeastOneKey()
+    {
+        $collection = $this->connection->selectCollection(self::$dbName, 'test-model');
+        $manager = new Modlr\Persister\MongoDb\SchemaManager;
+
+        $schemata = [
+            ['keys' => [], 'options' => ['unique' => true]]
+        ];
+
+        $manager->createSchemata($collection, $schemata);
     }
 
     public function testSchemaCreation()

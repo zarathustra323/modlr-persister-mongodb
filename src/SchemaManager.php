@@ -21,6 +21,9 @@ class SchemaManager
     public function createSchemata(Collection $collection, array $schemata)
     {
         foreach ($schemata as $schema) {
+            if (!isset($schema['keys']) || empty($schema['keys'])) {
+                throw new \InvalidArgumentException('Cannot create an index with no keys defined.');
+            }
             $schema['options']['background'] = true;
             $collection->ensureIndex($schema['keys'], $schema['options']);
         }
