@@ -108,6 +108,9 @@ final class Persister implements PersisterInterface
      */
     public function createSchemata(EntityMetadata $metadata)
     {
+        if (!$metadata->persistence instanceof StorageMetadata) {
+            throw PersisterException::badRequest('Wrong StorageMetadata type');
+        }
         $collection = $this->getQuery()->getModelCollection($metadata);
         $schemata = $metadata->persistence->schemata ?: [];
         return $this->schemaManager->createSchemata($collection, $schemata);
@@ -118,6 +121,9 @@ final class Persister implements PersisterInterface
      */
     public function syncSchemata(EntityMetadata $metadata)
     {
+        if (!$metadata->persistence instanceof StorageMetadata) {
+            throw PersisterException::badRequest('Wrong StorageMetadata type');
+        }
         $collection = $this->getQuery()->getModelCollection($metadata);
         $schemata = $metadata->persistence->schemata ?: [];
         return $this->schemaManager->syncSchemata($collection);
