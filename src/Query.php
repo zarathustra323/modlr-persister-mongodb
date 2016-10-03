@@ -193,6 +193,8 @@ final class Query
         $criteria = [];
         if (true === $metadata->isChildEntity()) {
             $criteria[Persister::POLYMORPHIC_KEY] = $metadata->type;
+        } elseif (true === $metadata->isPolymorphic() && false === $metadata->isAbstract()) {
+            $criteria[Persister::POLYMORPHIC_KEY] = $metadata->type;
         }
 
         $identifiers = (array) $identifiers;
