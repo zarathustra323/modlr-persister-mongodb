@@ -230,6 +230,7 @@ final class Persister implements PersisterInterface
      */
     public function query(EntityMetadata $metadata, Store $store, array $criteria, array $fields = [], array $sort = [], $offset = 0, $limit = 0)
     {
+        $criteria = array_merge($criteria, $this->getQuery()->getRetrieveCritiera($metadata));
         $cursor = $this->getQuery()->executeFind($metadata, $store, $criteria, $fields, $sort, $offset, $limit);
         return $this->getHydrator()->createCursorRecordSet($metadata, $cursor, $store);
     }
