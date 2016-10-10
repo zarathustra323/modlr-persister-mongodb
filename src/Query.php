@@ -160,13 +160,6 @@ final class Query
         $criteria = [
             $inverseField   => (array) $identifiers,
         ];
-        if (true === $owner->isChildEntity()) {
-            // The owner is owned by a polymorphic model. Must include the type with the inverse field criteria.
-            $criteria[$inverseField] = [
-                Persister::IDENTIFIER_KEY   => $criteria[$inverseField],
-                Persister::POLYMORPHIC_KEY  => $owner->type,
-            ];
-        }
         if (true === $related->isChildEntity()) {
             // The relationship is owned by a polymorphic model. Must include the type in the root criteria.
             $criteria[Persister::POLYMORPHIC_KEY] = $related->type;
@@ -199,6 +192,8 @@ final class Query
     {
         $criteria = [];
         if (true === $metadata->isChildEntity()) {
+            $criteria[Persister::POLYMORPHIC_KEY] = $metadata->type;
+        } elseif (true === $metadata->isPolymorphic() && false === $metadata->isAbstract()) {
             $criteria[Persister::POLYMORPHIC_KEY] = $metadata->type;
         }
 

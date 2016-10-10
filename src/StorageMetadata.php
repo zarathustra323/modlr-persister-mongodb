@@ -37,6 +37,13 @@ class StorageMetadata implements StorageLayerInterface
     public $idStrategy = 'object';
 
     /**
+     * Configured schemata for this entity
+     *
+     * @var array
+     */
+    public $schemata = [];
+
+    /**
      * {@inheritDoc}
      */
     public function getKey()
